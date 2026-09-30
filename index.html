@@ -196,6 +196,7 @@
   .pill.rival-pill{background:rgba(255,122,61,.18); border-color:#ff7a3d; color:#ffb48a; font-weight:600;}
   .series-card.rival{border-color:#ff7a3d; box-shadow:0 0 0 1px rgba(255,122,61,.55), 0 2px 8px rgba(0,0,0,.28);}
   .sc-label.rival{color:#ffb48a;}
+  .pill.series-score{background:rgba(79,140,255,.16); border-color:#4f8cff; color:#bcd3ff; font-weight:600; white-space:nowrap;}
 </style>
 </head>
 <body>
@@ -735,6 +736,7 @@ function deleteCustomTemplate(id){
 function setPlayoffsOnly(checked){
   const s=App.current.settings;
   s.playoffsOnly = checked;
+  if(checked) s.playoffs.enabled = true;
   scheduleSave();
   if(checked && ['schedule','standings','odds'].includes(App.tab)){ App.tab='playoffs'; }
   renderTabbar(); renderTab(true);
@@ -2016,7 +2018,7 @@ function gameRowSummary(g,teamId){
   return `<div class="row card" style="padding:6px 10px;cursor:pointer;" onclick="closeModal();openGameModal('${g.id}')">
     <span class="muted" style="width:44px;">${g.isPlayoff?'PO':'Wk '+g.week}</span>
     <span style="flex:1;">${home?'vs':'@'} ${esc(opp?opp.name:'TBD')}</span>
-    <span>${score}</span>
+    ${g.isPlayoff?seriesScorePill(g):''}<span>${score}</span>
   </div>`;
 }
 function deleteTeam(id){
@@ -2284,7 +2286,7 @@ function gameRow(g){
     <div class="toprow">
       <label onclick="event.stopPropagation();" style="margin:0;"><input type="checkbox" ${sel?'checked':''} onchange="toggleSelectRow('${g.id}',this)"></label>
       <span class="meta" style="flex:1;text-align:center;">${g.isPlayoff?`<span class="pill">Game ${g.gameNum||1}</span> `:''}${g.date?esc(g.date)+' \u00b7 ':''}${g.time?esc(g.time):''}${g.location?(g.time?' \u00b7 ':'')+esc(g.location):''}${g.neutralSite?' \u00b7 Neutral':''}${scopeTag}${rvPill}</span>
-      <span class="status ${played?'status-final':''}" style="width:auto;">${gameStatus(g)}</span>
+      ${g.isPlayoff?seriesScorePill(g):''}<span class="status ${played?'status-final':''}" style="width:auto;">${gameStatus(g)}</span>
     </div>
     <div onclick="openGameModal('${g.id}')" style="cursor:pointer;">
       <div class="teamline ${awayWon?'winner':''}"><span>${teamBadgeHtml(g.away)}${esc(teamName(g.away))}${awayRec} <span class="muted">(away)</span></span><span>${played?g.awayScore:''}</span></div>
@@ -2973,7 +2975,7 @@ function openGameModal(gameId){
   openModal(`
     <div class="modal-head"><h3 style="margin:0;">${esc(teamName(g.away))} <span onclick="event.stopPropagation();closeModal();openTeamModal('${g.away}')" style="cursor:pointer;text-decoration:underline;">\u25b8</span> @ ${esc(teamName(g.home))} <span onclick="event.stopPropagation();closeModal();openTeamModal('${g.home}')" style="cursor:pointer;text-decoration:underline;">\u25b8</span></h3><button class="xbtn" onclick="closeModal()">\u2715</button></div>
     <div class="modal-body">
-      <div class="row"><span class="pill">${g.isPlayoff?(g.isSubPlayoff?'Conf/Div Playoff \u2014 Game '+(g.gameNum||1):'Playoff \u2014 Game '+(g.gameNum||1)):'Week '+g.week}</span><span class="pill">${gameStatus(g)}</span>${g.neutralSite?'<span class="pill">Neutral site</span>':''}${seriesPill}${rivalPillHtml(g.home,g.away)}</div>
+      <div class="row"><span class="pill">${g.isPlayoff?(g.isSubPlayoff?'Conf/Div Playoff \u2014 Game '+(g.gameNum||1):'Playoff \u2014 Game '+(g.gameNum||1)):'Week '+g.week}</span><span class="pill">${gameStatus(g)}</span>${g.neutralSite?'<span class="pill">Neutral site</span>':''}${seriesPill}${seriesScorePill(g)}${rivalPillHtml(g.home,g.away)}</div>
       ${isAggDecider?`<div class="muted" style="font-size:11.5px;margin-top:6px;">This is the deciding game of the aggregate series \u2014 ties are allowed here too, but if the combined aggregate score is still tied after this game, it goes to OT/shootout.</div>`:''}
       <div class="card" style="text-align:center;margin:10px 0;">
         <div class="row" style="justify-content:center;align-items:center;gap:18px;">
@@ -4758,7 +4760,7 @@ function renderPlayoffs(){
         </div>
       </div>
       ${renderPlayoffGamesByRound()}
-    ` : `<div class="empty">No playoff bracket yet \u2014 auto-seed or set teams manually.</div>`}
+    ` : `<div class="empty">No playoff bracket yet \u2014 ${s.playoffsOnly?'choose your teams, conferences and seeds to build it.':'auto-seed or set teams manually.'}<div style="margin-top:10px;"><button class="btn primary" onclick="openManualSeedModal()">Set bracket teams &amp; seeds</button></div></div>`}
     ${hasBracket ? renderHeadToHeadPicker(g=>g.isPlayoff && !g.isSubPlayoff && !g.isRelegationPlayoff) : ''}
   </div>`;
 }
@@ -4879,27 +4881,211 @@ function autoSeedPlayoffs(){
   buildBracketFromGroups(groups);
   scheduleSave(); renderTab(); showToast('Bracket seeded from regular season');
 }
+/* =====================================================================
+   Playoff seeding editor (works for playoffs-only leagues and regular ones)
+   ===================================================================== */
+function seedLockedNames(){
+  const s=App.current.settings;
+  return !s.playoffsOnly && s.useConferences && (s.conferenceNames||[]).length>=2;
+}
+function seedDraftFromBracket(){
+  const t=App.current, b=t.playoffBracket;
+  if(!b || !b.series || !b.series.length || b.format==='double') return null;
+  const r0=b.series.filter(x=>x.round===0 && !x.isByeSlot || (x.round===0 && x.isByeSlot));
+  const byLabel={}; const order=[];
+  r0.forEach(x=>{
+    if(!(x.confLabel in byLabel)){ byLabel[x.confLabel]=[]; order.push(x.confLabel); }
+    if(x.teamA && x.seedA) byLabel[x.confLabel].push({seed:x.seedA, team:x.teamA});
+    if(x.teamB && x.seedB) byLabel[x.confLabel].push({seed:x.seedB, team:x.teamB});
+  });
+  const groups=order.map(name=>{
+    const arr=byLabel[name].sort((a,b)=>a.seed-b.seed);
+    const size=arr.length ? Math.max(...arr.map(a=>a.seed)) : 2;
+    const slots=[]; for(let i=1;i<=size;i++){ const f=arr.find(a=>a.seed===i); slots.push(f?f.team:''); }
+    return {name, size, slots};
+  }).filter(g=>g.size>0);
+  if(!groups.length) return null;
+  return {mode: groups.length>1?'multi':'single', groups};
+}
+function seedDefaultGroup(name, teams, size){
+  const slots=[]; for(let i=0;i<size;i++) slots.push(teams[i]?teams[i].id:'');
+  return {name, size, slots};
+}
+function seedNewDraft(mode, count){
+  const t=App.current, s=t.settings, p=s.playoffs;
+  const used=new Set();
+  if(mode==='single'){
+    const size=Math.max(2, Math.min(t.teams.length, p.teamsCount||8));
+    return {mode, groups:[seedDefaultGroup('League', t.teams, size)]};
+  }
+  let names;
+  if(seedLockedNames()) names=s.conferenceNames.slice();
+  else {
+    names=[]; for(let i=0;i<count;i++) names.push((s.conferenceNames||[])[i]||`Conference ${i+1}`);
+  }
+  const per=Math.max(2, Math.floor(t.teams.length/names.length) || 2);
+  const groups=names.map(n=>{
+    const own=t.teams.filter(x=>x.conference===n && !used.has(x.id));
+    const take=own.slice(0, per);
+    take.forEach(x=>used.add(x.id));
+    return {name:n, size:per, slots:[]};
+  });
+  // fill each conference with its own teams first, then whoever is left
+  groups.forEach(g=>{
+    const own=t.teams.filter(x=>x.conference===g.name);
+    for(let i=0;i<g.size;i++) g.slots.push('');
+    let k=0; own.forEach(x=>{ if(k<g.size){ g.slots[k++]=x.id; } });
+  });
+  const placed=new Set(); groups.forEach(g=>g.slots.forEach(id=>{ if(id) placed.add(id); }));
+  const left=t.teams.filter(x=>!placed.has(x.id));
+  groups.forEach(g=>{ for(let i=0;i<g.size;i++){ if(!g.slots[i] && left.length) g.slots[i]=left.shift().id; } });
+  return {mode, groups};
+}
 function openManualSeedModal(){
-  const t=App.current;
-  openModal(`
-    <div class="modal-head"><h3 style="margin:0;">Manually set playoff teams</h3><button class="xbtn" onclick="closeModal()">\u2715</button></div>
-    <div class="modal-body">
-      <p class="muted">Check teams in seed order (top to bottom = seed 1, 2, 3\u2026)</p>
-      <div id="manualSeedList" class="col">
-        ${t.teams.map(tm=>`<label class="row" style="align-items:center;"><input type="checkbox" value="${tm.id}"> ${esc(tm.name)} <span class="muted">(${esc(tm.division)})</span></label>`).join('')}
+  const t=App.current, s=t.settings;
+  let d=seedDraftFromBracket();
+  if(!d){
+    const multi = s.useConferences && s.playoffs.mergeBracket && (s.conferenceNames||[]).length>=2;
+    d=seedNewDraft(multi?'multi':'single', multi?s.conferenceNames.length:2);
+  }
+  App.seedDraft=d;
+  renderSeedModal();
+}
+function seedUsedMap(){
+  const m={}; App.seedDraft.groups.forEach((g,gi)=>g.slots.forEach((id,si)=>{ if(id) m[id]=`${g.name} #${si+1}`; }));
+  return m;
+}
+function renderSeedModal(){
+  const d=App.seedDraft, t=App.current, s=t.settings;
+  const locked=seedLockedNames();
+  const used=seedUsedMap();
+  const teamsSorted=t.teams.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  const opt=(cur,id,label)=>`<option value="${id}" ${cur===id?'selected':''}>${label}</option>`;
+  const groupHtml=d.groups.map((g,gi)=>`
+    <div class="card" style="margin-top:10px;">
+      <div class="row" style="align-items:center;">
+        ${d.mode==='multi'
+          ? `<input value="${esc(g.name)}" ${locked?'disabled':''} style="max-width:200px;font-weight:600;" onchange="seedSetName(${gi},this.value)">`
+          : `<strong>Seeds</strong>`}
+        <label class="row" style="align-items:center;margin-left:auto;">Teams <input type="number" min="2" max="64" value="${g.size}" style="width:70px;" onchange="seedSetSize(${gi},this.value)"></label>
+        <button class="btn small" onclick="seedFillGroup(${gi})">Auto-fill</button>
+        <button class="btn small" onclick="seedShuffleGroup(${gi})">\ud83c\udfb2 Shuffle</button>
+        <button class="btn small" onclick="seedClearGroup(${gi})">Clear</button>
       </div>
+      <div class="col" style="margin-top:8px;">
+        ${g.slots.map((id,si)=>`
+        <div class="row" style="align-items:center;flex-wrap:nowrap;">
+          <span class="pill" style="min-width:34px;text-align:center;">#${si+1}</span>
+          <select style="flex:1;min-width:0;" onchange="seedSetSlot(${gi},${si},this.value)">
+            <option value="">\u2014 empty \u2014</option>
+            ${teamsSorted.map(tm=>{
+              const u=used[tm.id];
+              const elsewhere = u && id!==tm.id;
+              return opt(id, tm.id, esc(tm.name)+(elsewhere?` (already ${esc(u)})`:''));
+            }).join('')}
+          </select>
+          <button class="btn small" title="Move up" ${si===0?'disabled':''} onclick="seedMove(${gi},${si},-1)">\u2191</button>
+          <button class="btn small" title="Move down" ${si===g.slots.length-1?'disabled':''} onclick="seedMove(${gi},${si},1)">\u2193</button>
+        </div>`).join('')}
+      </div>
+    </div>`).join('');
+  openModal(`
+    <div class="modal-head"><h3 style="margin:0;">Set playoff teams &amp; seeds</h3><button class="xbtn" onclick="closeModal()">\u2715</button></div>
+    <div class="modal-body">
+      <div class="muted" style="font-size:12px;">Choose a team for every seed. Seed #1 faces the lowest seed, #2 faces the next lowest, and so on. Use the arrows to move a team up or down.</div>
+      <div class="row" style="margin-top:10px;align-items:center;">
+        <button class="btn ${d.mode==='single'?'primary':''}" onclick="seedSetMode('single')">One bracket</button>
+        <button class="btn ${d.mode==='multi'?'primary':''}" onclick="seedSetMode('multi')">Multiple conferences</button>
+        ${d.mode==='multi' && !locked ? `<label class="row" style="align-items:center;">Conferences <input type="number" min="2" max="4" value="${d.groups.length}" style="width:64px;" onchange="seedSetConfCount(this.value)"></label>`:''}
+      </div>
+      ${d.mode==='multi'?`<div class="muted" style="font-size:11.5px;margin-top:6px;">Each conference gets its own seeds 1, 2, 3\u2026 and its own side of the bracket; the conference winners meet in the final. ${locked?'Conference names come from your league settings.':'Rename them below \u2014 picked teams are assigned to that conference.'} Every conference needs the same number of teams.</div>`:''}
+      ${groupHtml}
     </div>
     <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" onclick="submitManualSeed()">Build bracket</button></div>
   `,'wide');
 }
-function submitManualSeed(){
-  const boxes=[...document.querySelectorAll('#manualSeedList input:checked')];
-  const ids=boxes.map(b=>b.value);
-  const teams=ids.map(id=>App.current.teams.find(t=>t.id===id)).filter(Boolean);
-  if(teams.length<2){ showToast('Pick at least 2 teams'); return; }
-  buildBracketFromGroups([{label:'League', teams}]);
-  closeModal(); scheduleSave(); renderTab();
+function seedSetMode(m){
+  const old=App.seedDraft;
+  if(old.mode===m) return;
+  const s=App.current.settings;
+  App.seedDraft=seedNewDraft(m, Math.max(2,(s.conferenceNames||[]).length||2));
+  renderSeedModal();
 }
+function seedSetConfCount(n){
+  n=Math.max(2,Math.min(4,+n||2));
+  const d=App.seedDraft;
+  while(d.groups.length<n){ const i=d.groups.length; d.groups.push({name:`Conference ${i+1}`, size:d.groups[0].size, slots:Array(d.groups[0].size).fill('')}); }
+  d.groups.length=n;
+  renderSeedModal();
+}
+function seedSetName(gi,v){ App.seedDraft.groups[gi].name=v.trim()||`Conference ${gi+1}`; }
+function seedSetSize(gi,v){
+  const g=App.seedDraft.groups[gi]; v=Math.max(2,Math.min(64,+v||2));
+  if(App.seedDraft.mode==='multi') App.seedDraft.groups.forEach(x=>resizeSeedGroup(x,v)); else resizeSeedGroup(g,v);
+  renderSeedModal();
+}
+function resizeSeedGroup(g,v){
+  g.size=v;
+  if(g.slots.length>v) g.slots.length=v; else while(g.slots.length<v) g.slots.push('');
+}
+function seedSetSlot(gi,si,val){
+  const d=App.seedDraft;
+  if(val){ d.groups.forEach(g=>g.slots.forEach((id,i)=>{ if(id===val && !(g===d.groups[gi] && i===si)) g.slots[i]=''; })); }
+  d.groups[gi].slots[si]=val;
+  renderSeedModal();
+}
+function seedMove(gi,si,dir){
+  const sl=App.seedDraft.groups[gi].slots, j=si+dir;
+  if(j<0||j>=sl.length) return;
+  [sl[si],sl[j]]=[sl[j],sl[si]];
+  renderSeedModal();
+}
+function seedClearGroup(gi){ const g=App.seedDraft.groups[gi]; g.slots=Array(g.size).fill(''); renderSeedModal(); }
+function seedShuffleGroup(gi){
+  const g=App.seedDraft.groups[gi];
+  const filled=g.slots.filter(Boolean);
+  shuffleArr(filled);
+  g.slots=g.slots.map((x,i)=>x?'':'' ); // reset
+  for(let i=0;i<g.size;i++) g.slots[i]=filled[i]||'';
+  renderSeedModal();
+}
+function seedFillGroup(gi){
+  const d=App.seedDraft, t=App.current, g=d.groups[gi];
+  const usedElsewhere=new Set();
+  d.groups.forEach((x,i)=>{ if(i!==gi) x.slots.forEach(id=>{ if(id) usedElsewhere.add(id); }); });
+  let pool=t.teams.filter(x=>!usedElsewhere.has(x.id));
+  if(d.mode==='multi'){
+    const own=pool.filter(x=>x.conference===g.name), other=pool.filter(x=>x.conference!==g.name);
+    pool=own.concat(other);
+  }
+  // keep existing picks in place, fill blanks in order
+  const keep=new Set(g.slots.filter(Boolean));
+  pool=pool.filter(x=>!keep.has(x.id));
+  g.slots=g.slots.map(id=>id||(pool.length?pool.shift().id:''));
+  renderSeedModal();
+}
+function submitManualSeed(){
+  const d=App.seedDraft, t=App.current, s=t.settings;
+  const groups=d.groups.map(g=>({label: d.mode==='multi'?g.name:'League',
+    teams:g.slots.filter(Boolean).map(id=>t.teams.find(x=>x.id===id)).filter(Boolean)}));
+  const all=groups.flatMap(g=>g.teams.map(x=>x.id));
+  if(new Set(all).size!==all.length){ showToast('A team is picked twice'); return; }
+  if(groups.some(g=>g.teams.length<2)){ showToast(d.mode==='multi'?'Each conference needs at least 2 teams':'Pick at least 2 teams'); return; }
+  if(d.mode==='multi' && new Set(groups.map(g=>g.teams.length)).size>1){ showToast('Every conference needs the same number of teams'); return; }
+  if(d.mode==='multi'){
+    const names=groups.map(g=>g.label);
+    if(new Set(names).size!==names.length){ showToast('Conference names must be different'); return; }
+    if(!seedLockedNames()){
+      s.useConferences=true; s.conferenceNames=names; s.numConferences=names.length;
+      if(typeof syncDivisionConference==='function') syncDivisionConference();
+    }
+    groups.forEach(g=>g.teams.forEach(tm=>{ tm.conference=g.label; }));
+  }
+  buildBracketFromGroups(groups);
+  closeModal(); scheduleSave(); renderTab();
+  showToast('Bracket built');
+}
+
 function clearPlayoffs(){
   confirmAction('Clear the playoff bracket and games?', ()=>{
     App.current.games = App.current.games.filter(g=>!g.isPlayoff || g.isSubPlayoff);
@@ -5148,6 +5334,40 @@ function generateSeriesGames(sObj){
   }
   t.games.push(...games);
   sObj.gameIds = games.map(g=>g.id);
+}
+/* ---------------------------- running series score ---------------------------- */
+function seriesScoreInfo(g){
+  if(!g || !g.isPlayoff || !g.seriesId) return null;
+  const {sObj}=findSeriesAnyBracket(g.seriesId);
+  if(!sObj || !sObj.teamA || !sObj.teamB) return null;
+  const t=App.current;
+  const games=t.games.filter(x=>x.seriesId===g.seriesId).sort((a,b)=>(a.gameNum||0)-(b.gameNum||0));
+  const agg = sObj.mode==='aggregate';
+  let a=0,b=0;
+  const upto = g.homeScore!=null ? (x=>(x.gameNum||0)<=(g.gameNum||0)) : (x=>(x.gameNum||0)<(g.gameNum||0));
+  games.forEach(x=>{
+    if(x.homeScore==null || !upto(x)) return;
+    const aHome=x.home===sObj.teamA, as=aHome?x.homeScore:x.awayScore, bs=aHome?x.awayScore:x.homeScore;
+    if(agg){ a+=as; b+=bs; } else if(as>bs) a++; else if(bs>as) b++;
+  });
+  return {a,b,agg,teamA:sObj.teamA,teamB:sObj.teamB,played:g.homeScore!=null};
+}
+function seriesScoreText(a,b,teamA,teamB,agg){
+  if(a===b) return `${a}-${b}`;
+  const lead=a>b?teamA:teamB, hi=Math.max(a,b), lo=Math.min(a,b);
+  return `${hi}-${lo} ${teamName(lead)}`;
+}
+function seriesScorePill(g){
+  const i=seriesScoreInfo(g); if(!i) return '';
+  const txt=seriesScoreText(i.a,i.b,i.teamA,i.teamB,i.agg);
+  return `<span class="pill series-score" title="${i.played?'Series score after this game':'Series score going into this game'}">${i.played?'':'Series '}${esc(txt)}</span>`;
+}
+function seriesHeadline(sObj){
+  if(!sObj || !sObj.teamA || !sObj.teamB || sObj.isByeSlot) return '';
+  const rec=seriesRecord(sObj);
+  const w=seriesWinnerId(sObj);
+  const txt=seriesScoreText(rec.aWins, rec.bWins, sObj.teamA, sObj.teamB, sObj.mode==='aggregate');
+  return `<div class="row" style="margin-top:8px;align-items:center;"><span class="pill series-score" style="font-size:13px;">Series: ${esc(txt)}</span>${w?`<span class="pill" style="border-color:var(--good,#3ecf8e);">\ud83c\udfc6 ${esc(teamName(w))} advance</span>`:''}</div>`;
 }
 function seriesRecord(sObj){
   const t=App.current;
@@ -5406,12 +5626,14 @@ function openSeriesModal(seriesId){
     <div class="modal-body">
       <div class="row"><span class="pill">${esc(sObj.roundName)}</span>${sObj.confLabel?`<span class="pill">${esc(sObj.confLabel)}</span>`:''}${sObj.mode==='aggregate'?'<span class="pill">Aggregate score</span>':''}${sObj.teamA&&sObj.teamB?rivalPillHtml(sObj.teamA,sObj.teamB):''}</div>
       ${sObj.isByeSlot ? '<div class="muted" style="margin-top:8px;">This team has a bye and automatically advances.</div>' : `
+      ${seriesHeadline(sObj)}
       <h4 style="margin-top:10px;">Games in series</h4>
       <div class="col">${games.length? games.map(g=>`
         <div class="row card" style="padding:8px;">
           <span class="muted" style="width:60px;">Game ${g.gameNum}</span>
           <span style="flex:1;">${esc(teamName(g.away))} @ ${esc(teamName(g.home))}</span>
           <span>${g.homeScore!=null?g.awayScore+' - '+g.homeScore+(g.ot?' OT':'')+(g.pk?' PK':''):'Not played'}</span>
+          ${seriesScorePill(g)}
           <button class="btn small" onclick="closeModal();openGameModal('${g.id}')">Open</button>
         </div>`).join('') : '<div class="muted">Games are not generated until both teams are known.</div>'}
       </div>
