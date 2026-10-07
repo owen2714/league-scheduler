@@ -197,6 +197,23 @@
   .series-card.rival{border-color:#ff7a3d; box-shadow:0 0 0 1px rgba(255,122,61,.55), 0 2px 8px rgba(0,0,0,.28);}
   .sc-label.rival{color:#ffb48a;}
   .pill.series-score{background:rgba(79,140,255,.16); border-color:#4f8cff; color:#bcd3ff; font-weight:600; white-space:nowrap;}
+  /* ===== team-colour fades, scoreboard, tiebreak marks ===== */
+  .gamerow2 .teamline.tc{padding:6px 10px; border-radius:7px; margin:3px 0;}
+  .series-team{position:relative;}
+  sup.tb-mark{color:var(--accent2); font-weight:700; margin-left:2px; cursor:help;}
+  .scoreboard{border:1px solid var(--line); border-radius:12px; overflow:hidden; margin:10px 0; background:linear-gradient(180deg,var(--panel),var(--panel2)); box-shadow:0 2px 10px rgba(0,0,0,.25);}
+  .sb-team{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; border-bottom:1px solid var(--line); min-height:74px;}
+  .sb-team:last-child{border-bottom:none;}
+  .sb-team.lost .sb-name, .sb-team.lost .sb-score{opacity:.6;}
+  .sb-name{font-size:18px; font-weight:700; letter-spacing:.2px; display:flex; align-items:center; flex-wrap:wrap; gap:4px;}
+  .sb-team.won .sb-name{color:#fff;}
+  .sb-side{font-size:9.5px; font-weight:700; letter-spacing:1px; color:var(--sub); border:1px solid var(--line); border-radius:4px; padding:1px 5px; margin-left:4px;}
+  .sb-rec{font-size:12.5px; font-weight:600; margin-top:3px; color:var(--text); opacity:.92; display:flex; flex-wrap:wrap; gap:0 6px;}
+  .sb-dot{opacity:.5;}
+  .sb-sub{font-size:11px; color:var(--sub); margin-top:2px;}
+  .sb-score{font-size:42px; font-weight:800; line-height:1; min-width:64px; text-align:right; font-variant-numeric:tabular-nums;}
+  .sb-team.won .sb-score{color:var(--accent2);}
+  body.dev-iphone-v .sb-name{font-size:15px;} body.dev-iphone-v .sb-score{font-size:34px; min-width:46px;}
 </style>
 </head>
 <body>
@@ -625,8 +642,8 @@ let App = {
   playoffFilter:{round:'', conf:'', gameNum:''},
   bracketZoom:1,
   bracketFull:false,
-  statsSel:{teams:[], metric:'pf', mode:'chart', scope:'regular'},
-  statsView:'stats',
+  statsSel:{teams:[], metric:'pf', mode:'list', scope:'regular'},
+  statsView:'graphs',
   oddsSort:{key:null, dir:-1},
   standingsSort:{key:null, dir:-1},
   scheduleFilterUnplayed:false,
@@ -1526,7 +1543,17 @@ function perGroupConfigFieldsHtml(divName){
   </div>`;
 }
 function scoreLabel(k){ return {win:'Win pts',loss:'Loss pts',tie:'Tie pts',otWin:'OT win pts',otLoss:'OT loss pts',pkWin:'Shootout/PK win pts',pkLoss:'Shootout/PK loss pts'}[k]; }
-const TIEBREAKER_LABELS = {points:'Points',headToHead:'Head-to-head',divisionRecord:'Division record',conferenceRecord:'Conference record',pointDiff:'Point differential',pointsFor:'Points for',pointsAgainst:'Points against (fewer is better)',winPct:'Win percentage',wins:'Total wins',strengthOfSchedule:'Strength of schedule (opponents\' win %)',extraGame:'Extra game \u2014 winner takes the tied spot (see "Extra-game tiebreaker" setting)'};
+const TIEBREAKER_LABELS = {
+  points:'Points',winPct:'Win percentage',wins:'Total wins',regWins:'Regulation wins (no OT / shootout)',row:'Regulation + OT wins (no shootout wins)',fewestLosses:'Fewest losses',
+  pointDiff:'Point / goal differential',pointsFor:'Points / goals for',pointsAgainst:'Points / goals against (fewer is better)',
+  headToHead:'Head-to-head (record vs. the other team)',
+  h2hPoints:'Mini-league: points in games among the tied teams',h2hDiff:'Mini-league: differential in games among the tied teams',h2hFor:'Mini-league: points scored in games among the tied teams',h2hWins:'Mini-league: wins in games among the tied teams',
+  divisionRecord:'Division record',divisionDiff:'Division point differential',conferenceRecord:'Conference record',conferenceDiff:'Conference point differential',
+  strengthOfSchedule:'Strength of schedule (opponents\' win %)',strengthOfVictory:'Strength of victory (win % of teams beaten)',
+  awayPointsFor:'Away points / goals scored',awayDiff:'Away differential',awayWins:'Away wins',homeWins:'Home wins',biggestWin:'Biggest win (margin)',cleanSheets:'Clean sheets (opponent scored 0)',recentForm:'Recent form (last 5 games)',
+  skill:'Team rating / seed (higher first)',lots:'Drawing of lots (random, saved once drawn)',alphabetical:'Alphabetical by team name',
+  extraGame:'Tiebreaker game(s) \u2014 use \u2694\ufe0f Break ties in Standings',manualPick:'Manual pick \u2014 you choose who moves on (Break ties in Standings)'
+};
 function renderTiebreakers(){
   const s = App.current.settings;
   const available = Object.keys(TIEBREAKER_LABELS).filter(k=>!s.tiebreakers.includes(k));
@@ -2016,7 +2043,7 @@ function gameRowSummary(g,teamId){
   const home = g.home===teamId;
   const score = g.homeScore!=null ? `${home?g.homeScore:g.awayScore} - ${home?g.awayScore:g.homeScore}${g.ot?' (OT)':''}${g.pk?' (PK)':''}` : 'Not played';
   return `<div class="row card" style="padding:6px 10px;cursor:pointer;" onclick="closeModal();openGameModal('${g.id}')">
-    <span class="muted" style="width:44px;">${g.isPlayoff?'PO':'Wk '+g.week}</span>
+    <span class="muted" style="width:44px;">${g.isPlayoff?'PO':(g.isTiebreakerGame?'TB':'Wk '+g.week)}</span>
     <span style="flex:1;">${home?'vs':'@'} ${esc(opp?opp.name:'TBD')}</span>
     ${g.isPlayoff?seriesScorePill(g):''}<span>${score}</span>
   </div>`;
@@ -2166,7 +2193,7 @@ function renderScheduleBody(fmt, games){
   const weeks = [...new Set(games.map(g=>g.week))].sort((a,b)=>a-b);
   return weeks.length? weeks.map(w=>`
       <div class="card" style="padding:0;overflow:hidden;">
-        <h4 style="padding:10px 12px 0 12px;">Week ${w}</h4>
+        <h4 style="padding:10px 12px 0 12px;">${weekLabel(w)}</h4>
         <div class="week-actions">
           <button class="btn small" onclick="selectAllInWeek(${w})">Select all</button>
           <button class="btn small" onclick="clearAllInWeek(${w})">Clear all</button>
@@ -2289,8 +2316,8 @@ function gameRow(g){
       ${g.isPlayoff?seriesScorePill(g):''}<span class="status ${played?'status-final':''}" style="width:auto;">${gameStatus(g)}</span>
     </div>
     <div onclick="openGameModal('${g.id}')" style="cursor:pointer;">
-      <div class="teamline ${awayWon?'winner':''}"><span>${teamBadgeHtml(g.away)}${esc(teamName(g.away))}${awayRec} <span class="muted">(away)</span></span><span>${played?g.awayScore:''}</span></div>
-      <div class="teamline ${homeWon?'winner':''}"><span>${teamBadgeHtml(g.home)}${esc(teamName(g.home))}${homeRec} <span class="muted">(home)</span></span><span>${played?g.homeScore:''}</span></div>
+      <div class="teamline ${awayWon?'winner':''}${teamFadeStyle(g.away)?' tc':''}" style="${teamFadeStyle(g.away,0.45)}"><span>${teamBadgeHtml(g.away)}${esc(teamName(g.away))}${awayRec} <span class="muted">(away)</span></span><span>${played?g.awayScore:''}</span></div>
+      <div class="teamline ${homeWon?'winner':''}${teamFadeStyle(g.home)?' tc':''}" style="${teamFadeStyle(g.home,0.45)}"><span>${teamBadgeHtml(g.home)}${esc(teamName(g.home))}${homeRec} <span class="muted">(home)</span></span><span>${played?g.homeScore:''}</span></div>
     </div>
   </div>`;
 }
@@ -2975,21 +3002,9 @@ function openGameModal(gameId){
   openModal(`
     <div class="modal-head"><h3 style="margin:0;">${esc(teamName(g.away))} <span onclick="event.stopPropagation();closeModal();openTeamModal('${g.away}')" style="cursor:pointer;text-decoration:underline;">\u25b8</span> @ ${esc(teamName(g.home))} <span onclick="event.stopPropagation();closeModal();openTeamModal('${g.home}')" style="cursor:pointer;text-decoration:underline;">\u25b8</span></h3><button class="xbtn" onclick="closeModal()">\u2715</button></div>
     <div class="modal-body">
-      <div class="row"><span class="pill">${g.isPlayoff?(g.isSubPlayoff?'Conf/Div Playoff \u2014 Game '+(g.gameNum||1):'Playoff \u2014 Game '+(g.gameNum||1)):'Week '+g.week}</span><span class="pill">${gameStatus(g)}</span>${g.neutralSite?'<span class="pill">Neutral site</span>':''}${seriesPill}${seriesScorePill(g)}${rivalPillHtml(g.home,g.away)}</div>
+      <div class="row"><span class="pill">${g.isPlayoff?(g.isSubPlayoff?'Conf/Div Playoff \u2014 Game '+(g.gameNum||1):'Playoff \u2014 Game '+(g.gameNum||1)):(g.isTiebreakerGame?'Tiebreaker game':'Week '+g.week)}</span><span class="pill">${gameStatus(g)}</span>${g.neutralSite?'<span class="pill">Neutral site</span>':''}${seriesPill}${seriesScorePill(g)}${rivalPillHtml(g.home,g.away)}</div>
       ${isAggDecider?`<div class="muted" style="font-size:11.5px;margin-top:6px;">This is the deciding game of the aggregate series \u2014 ties are allowed here too, but if the combined aggregate score is still tied after this game, it goes to OT/shootout.</div>`:''}
-      <div class="card" style="text-align:center;margin:10px 0;">
-        <div class="row" style="justify-content:center;align-items:center;gap:18px;">
-          <div style="flex:1;text-align:right;">
-            <div style="font-weight:${awayWon?'800':'500'};font-size:16px;${awayWon?'color:var(--accent2);':''}">${esc(teamName(g.away))}</div>
-            <div class="muted" style="font-size:11px;">PPG ${ppgAway} \u00b7 Away rec ${formatRecord(awayRecAway)}</div>
-          </div>
-          <div style="font-size:32px;font-weight:800;min-width:120px;">${played?`${g.awayScore} - ${g.homeScore}`:'vs'}</div>
-          <div style="flex:1;text-align:left;">
-            <div style="font-weight:${homeWon?'800':'500'};font-size:16px;${homeWon?'color:var(--accent2);':''}">${esc(teamName(g.home))}</div>
-            <div class="muted" style="font-size:11px;">PPG ${ppgHome} \u00b7 Home rec ${formatRecord(homeRecAtHome)}</div>
-          </div>
-        </div>
-      </div>
+      ${scoreboardHtml(g, ppgAway, ppgHome, awayRecAway, homeRecAtHome)}
       <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:10px;">
         <div><label>Date (optional)</label><input id="gmDate" type="date" value="${esc(g.date||'')}"></div>
         <div><label>Time</label><input id="gmTime" placeholder="e.g. 7:00 PM" value="${esc(g.time||'')}"></div>
@@ -3364,6 +3379,7 @@ function computeRecord(teamId, games){
   let w=0,l=0,tt=0,otw=0,otl=0,pkw=0,pkl=0,pf=0,pa=0,points=0;
   const results=[];
   games.forEach(g=>{
+    if(g.isTiebreakerGame) return;   // tiebreaker games never count toward records
     if(g.homeScore==null||g.awayScore==null) return;
     if(g.home!==teamId && g.away!==teamId) return;
     const isHome=g.home===teamId;
@@ -3396,7 +3412,7 @@ function formatRecord(rec){
 function headToHeadWinPct(teamId, oppIds, games){
   let w=0,tot=0;
   games.forEach(g=>{
-    if(g.homeScore==null) return;
+    if(g.homeScore==null || g.isTiebreakerGame) return;
     const ids=[g.home,g.away];
     if(!ids.includes(teamId)) return;
     const opp = g.home===teamId?g.away:g.home;
@@ -3407,140 +3423,442 @@ function headToHeadWinPct(teamId, oppIds, games){
   });
   return tot? w/tot : 0.5;
 }
+/* =====================================================================
+   Tiebreaker engine: many criteria, mini-league head-to-head, tiebreaker games
+   (which never count toward records), and manual "you pick who moves on".
+   ===================================================================== */
 function betterSeedTeamId(aId, bId){
-  const t=App.current, s=t.settings;
-  const games = t.games.filter(g=>!g.isPlayoff);
-  const tb = s.tiebreakers;
-  const recA = computeRecord(aId, games), recB = computeRecord(bId, games);
-  for(const key of tb){
-    let d=0;
-    if(key==='points') d = recA.points - recB.points;
-    else if(key==='pointDiff') d = recA.diff - recB.diff;
-    else if(key==='pointsFor') d = recA.pf - recB.pf;
-    else if(key==='pointsAgainst') d = recB.pa - recA.pa;
-    else if(key==='winPct') d = recA.pct - recB.pct;
-    else if(key==='wins') d = recA.w - recB.w;
-    else if(key==='strengthOfSchedule'){
-      const sosA = avgOppWinPct(games.filter(g=>g.home===aId||g.away===aId).map(g=>g.home===aId?g.away:g.home));
-      const sosB = avgOppWinPct(games.filter(g=>g.home===bId||g.away===bId).map(g=>g.home===bId?g.away:g.home));
-      d = sosA - sosB;
-    }
-    else if(key==='divisionRecord'){
-      const divGames = games.filter(g=>{
-        const h=t.teams.find(x=>x.id===g.home), a=t.teams.find(x=>x.id===g.away);
-        return h&&a&&h.division===a.division;
-      });
-      d = computeRecord(aId,divGames).pct - computeRecord(bId,divGames).pct;
-    } else if(key==='conferenceRecord' && s.useConferences){
-      const confGames = games.filter(g=>{
-        const h=t.teams.find(x=>x.id===g.home), a=t.teams.find(x=>x.id===g.away);
-        return h&&a&&h.conference&&h.conference===a.conference;
-      });
-      d = computeRecord(aId,confGames).pct - computeRecord(bId,confGames).pct;
-    } else if(key==='headToHead'){
-      d = headToHeadWinPct(aId,[bId],games) - headToHeadWinPct(bId,[aId],games);
-    } else if(key==='extraGame'){
-      d = tiebreakerGameResult(aId,bId);
-    }
-    if(Math.abs(d)>1e-9) return d>0 ? aId : bId;
-  }
-  const ta=t.teams.find(x=>x.id===aId), tb2=t.teams.find(x=>x.id===bId);
-  return (ta && tb2 && ta.name.localeCompare(tb2.name)<0) ? aId : bId;
+  const t=App.current;
+  const rows=standingsRows(t.teams, t.games, false);
+  const ia=rows.findIndex(r=>r.team.id===aId), ib=rows.findIndex(r=>r.team.id===bId);
+  if(ia<0) return bId; if(ib<0) return aId;
+  return ia<ib ? aId : bId;
 }
-function standingsRows(teams, allGames, includePlayoffs, includeCountedSubPlayoffs){
+function ensureTeamLot(tm){
+  if(tm.lot==null) tm.lot=Math.random();
+  return tm.lot;
+}
+/* Builds the per-team stat rows plus a comparator for the configured tiebreaker list.
+   cmp(r1,r2) < 0 means r1 ranks ahead. `skip` is an optional Set of criteria to ignore. */
+function buildStandingRows(teams, allGames, includePlayoffs, includeCountedSubPlayoffs){
+  const t=App.current, s=t.settings, tb=s.tiebreakers;
   const games = includePlayoffs? allGames : allGames.filter(g=> includeCountedSubPlayoffs ? isRegularSeasonGame(g) : !g.isPlayoff);
-  // Pre-bucket games per team ONCE (O(games)) instead of every team's computeRecord call
-  // re-scanning the whole games array (O(teams*games)). This is the single biggest cost in
-  // this function, and it's called repeatedly inside Monte Carlo simulation loops and every
-  // time a game/standings screen opens, so keeping it fast here matters a lot.
-  const gamesByTeam = {};
-  games.forEach(g=>{
-    (gamesByTeam[g.home]=gamesByTeam[g.home]||[]).push(g);
-    (gamesByTeam[g.away]=gamesByTeam[g.away]||[]).push(g);
-  });
-  const rows = teams.map(tm=>({team:tm, ...computeRecord(tm.id, gamesByTeam[tm.id]||[])}));
-  const tb = App.current.settings.tiebreakers;
-
-  let divPct=null;
-  if(tb.includes('divisionRecord')){
-    divPct={};
-    const divGamesByTeam={};
-    games.forEach(g=>{
-      const h=teamById(g.home), a=teamById(g.away);
-      if(h&&a&&h.division===a.division){
-        (divGamesByTeam[g.home]=divGamesByTeam[g.home]||[]).push(g);
-        (divGamesByTeam[g.away]=divGamesByTeam[g.away]||[]).push(g);
-      }
-    });
-    rows.forEach(r=>{ divPct[r.team.id]=computeRecord(r.team.id, divGamesByTeam[r.team.id]||[]).pct; });
-  }
-  let confPct=null;
-  if(tb.includes('conferenceRecord') && App.current.settings.useConferences){
-    confPct={};
-    const confGamesByTeam={};
-    games.forEach(g=>{
-      const h=teamById(g.home), a=teamById(g.away);
-      if(h&&a&&h.conference&&h.conference===a.conference){
-        (confGamesByTeam[g.home]=confGamesByTeam[g.home]||[]).push(g);
-        (confGamesByTeam[g.away]=confGamesByTeam[g.away]||[]).push(g);
-      }
-    });
-    rows.forEach(r=>{ confPct[r.team.id]=computeRecord(r.team.id, confGamesByTeam[r.team.id]||[]).pct; });
-  }
-  let h2h=null;
-  if(tb.includes('headToHead')){
-    h2h={};
-    games.forEach(g=>{
+  const regGames = games.filter(g=>!g.isTiebreakerGame);
+  const tbGames = games.filter(g=>g.isTiebreakerGame && g.homeScore!=null && g.awayScore!=null);
+  const byTeam = {};
+  regGames.forEach(g=>{ (byTeam[g.home]=byTeam[g.home]||[]).push(g); (byTeam[g.away]=byTeam[g.away]||[]).push(g); });
+  const rows = teams.map(tm=>({team:tm, ...computeRecord(tm.id, byTeam[tm.id]||[])}));
+  const rowOf={}; rows.forEach(r=>{ rowOf[r.team.id]=r; });
+  const recOf = id => rowOf[id] || computeRecord(id, byTeam[id]||[]);
+  const lazy={};
+  const memo=(name,fn)=> (name in lazy) ? lazy[name] : (lazy[name]=fn());
+  const sameDiv=(g)=>{ const h=teamById(g.home), a=teamById(g.away); return h&&a&&h.division===a.division; };
+  const sameConf=(g)=>{ const h=teamById(g.home), a=teamById(g.away); return h&&a&&h.conference&&h.conference===a.conference; };
+  const subsetRecs=(pred)=>{
+    const by={};
+    regGames.forEach(g=>{ if(!pred(g)) return; (by[g.home]=by[g.home]||[]).push(g); (by[g.away]=by[g.away]||[]).push(g); });
+    const out={}; rows.forEach(r=>{ out[r.team.id]=computeRecord(r.team.id, by[r.team.id]||[]); });
+    return out;
+  };
+  const h2hMap = ()=> memo('h2h', ()=>{
+    const m={};
+    regGames.forEach(g=>{
       if(g.homeScore==null) return;
       const a=g.home,b=g.away;
-      h2h[a]=h2h[a]||{}; h2h[b]=h2h[b]||{};
-      h2h[a][b]=h2h[a][b]||{w:0,tot:0}; h2h[b][a]=h2h[b][a]||{w:0,tot:0};
-      h2h[a][b].tot++; h2h[b][a].tot++;
-      if(g.homeScore>g.awayScore) h2h[a][b].w++;
-      else if(g.awayScore>g.homeScore) h2h[b][a].w++;
-      else { h2h[a][b].w+=0.5; h2h[b][a].w+=0.5; }
+      m[a]=m[a]||{}; m[b]=m[b]||{};
+      m[a][b]=m[a][b]||{w:0,tot:0}; m[b][a]=m[b][a]||{w:0,tot:0};
+      m[a][b].tot++; m[b][a].tot++;
+      if(g.homeScore>g.awayScore) m[a][b].w++;
+      else if(g.awayScore>g.homeScore) m[b][a].w++;
+      else { m[a][b].w+=0.5; m[b][a].w+=0.5; }
     });
-  }
-  const h2hPct = (a,b) => (h2h && h2h[a] && h2h[a][b] && h2h[a][b].tot) ? h2h[a][b].w/h2h[a][b].tot : 0.5;
-
-  let sosMap=null;
-  if(tb.includes('strengthOfSchedule')){
-    sosMap={};
-    // Opponents' records also come straight out of the same gamesByTeam index, so this
-    // whole block is O(games) instead of O(teams * games) it used to be.
+    return m;
+  });
+  const sosMap = ()=> memo('sos', ()=>{
+    const m={};
     rows.forEach(r=>{
-      const oppIds = (gamesByTeam[r.team.id]||[]).map(g=>g.home===r.team.id?g.away:g.home);
-      if(!oppIds.length){ sosMap[r.team.id]=0; return; }
-      const pcts = oppIds.map(id=>computeRecord(id, gamesByTeam[id]||[]).pct);
-      sosMap[r.team.id] = pcts.reduce((a,b)=>a+b,0)/pcts.length;
+      const opp=(byTeam[r.team.id]||[]).filter(g=>g.homeScore!=null).map(g=>g.home===r.team.id?g.away:g.home);
+      m[r.team.id]= opp.length ? opp.reduce((a,id)=>a+recOf(id).pct,0)/opp.length : 0;
     });
-  }
+    return m;
+  });
+  const sovMap = ()=> memo('sov', ()=>{
+    const m={};
+    rows.forEach(r=>{
+      const beaten=[];
+      (byTeam[r.team.id]||[]).forEach(g=>{
+        if(g.homeScore==null) return;
+        const home=g.home===r.team.id, my=home?g.homeScore:g.awayScore, op=home?g.awayScore:g.homeScore;
+        if(my>op) beaten.push(home?g.away:g.home);
+      });
+      m[r.team.id]= beaten.length ? beaten.reduce((a,id)=>a+recOf(id).pct,0)/beaten.length : 0;
+    });
+    return m;
+  });
+  const miscMap = ()=> memo('misc', ()=>{
+    const m={};
+    rows.forEach(r=>{
+      const id=r.team.id; let awayPF=0, awayW=0, homeW=0, big=0, clean=0, awayDiff=0;
+      (byTeam[id]||[]).forEach(g=>{
+        if(g.homeScore==null) return;
+        const home=g.home===id, my=home?g.homeScore:g.awayScore, op=home?g.awayScore:g.homeScore;
+        if(!home){ awayPF+=my; awayDiff+=my-op; if(my>op) awayW++; } else if(my>op) homeW++;
+        if(my>op) big=Math.max(big,my-op);
+        if(op===0) clean++;
+      });
+      const last=(r.results||[]).slice(-5);
+      m[id]={awayPF, awayW, homeW, big, clean, awayDiff, recent: last.length ? last.filter(x=>x==='W').length/last.length : 0};
+    });
+    return m;
+  });
+  const divRecs = ()=> memo('divRecs', ()=>subsetRecs(sameDiv));
+  const confRecs = ()=> memo('confRecs', ()=>subsetRecs(sameConf));
+  const decisions = t.tieDecisions||[];
 
-  rows.sort((r1,r2)=>{
-    for(const key of tb){
-      let d=0;
-      if(key==='points') d=r2.points-r1.points;
-      else if(key==='pointDiff') d=r2.diff-r1.diff;
-      else if(key==='pointsFor') d=r2.pf-r1.pf;
-      else if(key==='pointsAgainst') d=r1.pa-r2.pa;
-      else if(key==='winPct') d=r2.pct-r1.pct;
-      else if(key==='wins') d=r2.w-r1.w;
-      else if(key==='strengthOfSchedule') d=(sosMap[r2.team.id]||0)-(sosMap[r1.team.id]||0);
-      else if(key==='divisionRecord') d = (divPct[r2.team.id]||0) - (divPct[r1.team.id]||0);
-      else if(key==='conferenceRecord') d = (confPct?(confPct[r2.team.id]||0):0) - (confPct?(confPct[r1.team.id]||0):0);
-      else if(key==='headToHead') d = h2hPct(r2.team.id,r1.team.id) - h2hPct(r1.team.id,r2.team.id);
-      else if(key==='extraGame') d = -tiebreakerGameResult(r1.team.id, r2.team.id);
-      if(Math.abs(d)>1e-9) return d;
+  let SKIP=null, grpCache={}, miniCache={};
+  const group=(idx,r1)=>{
+    const ck=idx+'|'+r1.team.id;
+    if(grpCache[ck]) return grpCache[ck];
+    const g=rows.filter(x=>{
+      if(x===r1) return true;
+      for(let i=0;i<idx;i++){
+        if(SKIP && SKIP.has(tb[i])) continue;
+        if(Math.abs(cmpKey(tb[i],x,r1,i))>1e-9) return false;
+      }
+      return true;
+    });
+    return grpCache[ck]=g;
+  };
+  const mini=(idx,r1)=>{
+    const g=group(idx,r1), ids=g.map(x=>x.team.id), ck=ids.slice().sort().join(',');
+    if(miniCache[ck]) return miniCache[ck];
+    const set=new Set(ids), among=regGames.filter(x=>set.has(x.home)&&set.has(x.away));
+    const out={}; ids.forEach(id=>{ out[id]=computeRecord(id, among); });
+    return miniCache[ck]=out;
+  };
+  function cmpKey(key,r1,r2,idx){
+    const id1=r1.team.id, id2=r2.team.id;
+    switch(key){
+      case 'points': return r2.points-r1.points;
+      case 'pointDiff': return r2.diff-r1.diff;
+      case 'pointsFor': return r2.pf-r1.pf;
+      case 'pointsAgainst': return r1.pa-r2.pa;
+      case 'winPct': return r2.pct-r1.pct;
+      case 'wins': return r2.w-r1.w;
+      case 'regWins': return (r2.w-r2.otw-r2.pkw)-(r1.w-r1.otw-r1.pkw);
+      case 'row': return (r2.w-r2.pkw)-(r1.w-r1.pkw);
+      case 'fewestLosses': return r1.l-r2.l;
+      case 'strengthOfSchedule': { const m=sosMap(); return (m[id2]||0)-(m[id1]||0); }
+      case 'strengthOfVictory': { const m=sovMap(); return (m[id2]||0)-(m[id1]||0); }
+      case 'divisionRecord': { const m=divRecs(); return (m[id2]?m[id2].pct:0)-(m[id1]?m[id1].pct:0); }
+      case 'divisionDiff': { const m=divRecs(); return (m[id2]?m[id2].diff:0)-(m[id1]?m[id1].diff:0); }
+      case 'conferenceRecord': { if(!s.useConferences) return 0; const m=confRecs(); return (m[id2]?m[id2].pct:0)-(m[id1]?m[id1].pct:0); }
+      case 'conferenceDiff': { if(!s.useConferences) return 0; const m=confRecs(); return (m[id2]?m[id2].diff:0)-(m[id1]?m[id1].diff:0); }
+      case 'headToHead': { const m=h2hMap(); const p=(a,b)=> (m[a]&&m[a][b]&&m[a][b].tot)? m[a][b].w/m[a][b].tot : 0.5; return p(id2,id1)-p(id1,id2); }
+      case 'h2hPoints': { const m=mini(idx,r1); return (m[id2]?m[id2].points:0)-(m[id1]?m[id1].points:0); }
+      case 'h2hDiff':   { const m=mini(idx,r1); return (m[id2]?m[id2].diff:0)-(m[id1]?m[id1].diff:0); }
+      case 'h2hFor':    { const m=mini(idx,r1); return (m[id2]?m[id2].pf:0)-(m[id1]?m[id1].pf:0); }
+      case 'h2hWins':   { const m=mini(idx,r1); return (m[id2]?m[id2].w:0)-(m[id1]?m[id1].w:0); }
+      case 'awayPointsFor': { const m=miscMap(); return m[id2].awayPF-m[id1].awayPF; }
+      case 'awayDiff': { const m=miscMap(); return m[id2].awayDiff-m[id1].awayDiff; }
+      case 'awayWins': { const m=miscMap(); return m[id2].awayW-m[id1].awayW; }
+      case 'homeWins': { const m=miscMap(); return m[id2].homeW-m[id1].homeW; }
+      case 'biggestWin': { const m=miscMap(); return m[id2].big-m[id1].big; }
+      case 'cleanSheets': { const m=miscMap(); return m[id2].clean-m[id1].clean; }
+      case 'recentForm': { const m=miscMap(); return m[id2].recent-m[id1].recent; }
+      case 'skill': return (r2.team.skillLevel||0)-(r1.team.skillLevel||0);
+      case 'alphabetical': return r1.team.name.localeCompare(r2.team.name);
+      case 'lots': if(App._simTiebreakMode) return 0; return ensureTeamLot(r2.team)-ensureTeamLot(r1.team);
+      case 'extraGame': {
+        const g=group(idx,r1), set=new Set(g.map(x=>x.team.id));
+        const among=tbGames.filter(x=>set.has(x.home)&&set.has(x.away));
+        if(!among.length) return 0;
+        const pct=id=>{ let w=0,n=0; among.forEach(x=>{ if(x.home!==id&&x.away!==id) return; n++; const my=x.home===id?x.homeScore:x.awayScore, op=x.home===id?x.awayScore:x.homeScore; if(my>op) w++; else if(my===op) w+=0.5; }); return n? w/n : 0.5; };
+        return pct(id2)-pct(id1);
+      }
+      case 'manualPick': {
+        for(let i=decisions.length-1;i>=0;i--){
+          const d=decisions[i], a=d.order.indexOf(id1), b=d.order.indexOf(id2);
+          if(a>=0 && b>=0) return a-b;
+        }
+        return 0;
+      }
     }
+    return 0;
+  }
+  function cmp(r1,r2,skip){
+    SKIP=skip||null;
+    for(let i=0;i<tb.length;i++){
+      const k=tb[i];
+      if(SKIP && SKIP.has(k)) continue;
+      const d=cmpKey(k,r1,r2,i);
+      if(Math.abs(d)>1e-9){ SKIP=null; return d; }
+    }
+    SKIP=null; return 0;
+  }
+  return {rows, cmp};
+}
+function standingsRows(teams, allGames, includePlayoffs, includeCountedSubPlayoffs){
+  const B=buildStandingRows(teams, allGames, includePlayoffs, includeCountedSubPlayoffs);
+  const rows=B.rows;
+  rows.sort((r1,r2)=>{
+    const d=B.cmp(r1,r2);
+    if(d) return d;
     // Inside a Monte Carlo batch, break a genuine tie randomly (fresh coin flip per sim)
-    // rather than always favoring the same team alphabetically \u2014 otherwise, whenever a
-    // scenario is symmetric enough to produce exact ties (e.g. no skill weighting on),
-    // one team would win that tiebreak in literally every simulated run, skewing its
-    // odds up and everyone else's down for no real reason. Real, single-shot standings
-    // display still breaks ties alphabetically for a stable, predictable table.
+    // rather than always favouring the same team alphabetically. Real, single-shot standings
+    // break ties alphabetically for a stable, predictable table.
     return App._simTiebreakMode ? (Math.random()-0.5) : r1.team.name.localeCompare(r2.team.name);
   });
   return rows;
+}
+
+/* ---- tie detection + popup ---- */
+const TIE_SKIP = new Set(['extraGame','manualPick','lots','alphabetical']);
+function computeTieGroups(){
+  const t=App.current, s=t.settings;
+  const pools = s.relegation.enabled ? s.divisionNames.map(n=>({name:n, teams:t.teams.filter(x=>x.division===n)})) : [{name:'', teams:t.teams}];
+  const out=[];
+  pools.forEach(pool=>{
+    if(pool.teams.length<2) return;
+    const B=buildStandingRows(pool.teams, t.games, false);
+    const rows=B.rows.filter(r=>r.gp>0);
+    rows.sort((a,b)=>B.cmp(a,b,TIE_SKIP) || a.team.name.localeCompare(b.team.name));
+    let i=0;
+    while(i<rows.length){
+      let j=i+1;
+      while(j<rows.length && B.cmp(rows[i],rows[j],TIE_SKIP)===0) j++;
+      if(j-i>=2){
+        const grp=rows.slice(i,j);
+        // already settled? every adjacent pair is separated once game results / manual picks are applied
+        const probe=grp.slice().sort((a,b)=>B.cmp(a,b,new Set(['lots','alphabetical'])) || a.team.name.localeCompare(b.team.name));
+        let resolved=true;
+        for(let k=0;k<probe.length-1;k++){ if(B.cmp(probe[k],probe[k+1],new Set(['lots','alphabetical']))===0){ resolved=false; break; } }
+        out.push({pool:pool.name, start:i+1, rows:grp, order:probe.map(r=>r.team.id), resolved});
+      }
+      i=j;
+    }
+  });
+  return out;
+}
+function tiebreakerWeekNum(){
+  const t=App.current;
+  const ex=t.games.find(g=>g.isTiebreakerGame);
+  if(ex) return ex.week;
+  return Math.max(0,...t.games.filter(g=>!g.isPlayoff).map(g=>g.week||0))+1;
+}
+function isTiebreakerWeek(w){
+  const gs=App.current.games.filter(g=>!g.isPlayoff && g.week===w);
+  return gs.length>0 && gs.every(g=>g.isTiebreakerGame);
+}
+function weekLabel(w){ return isTiebreakerWeek(w) ? 'Tiebreakers' : 'Week '+w; }
+function tieDefaultGames(ids){
+  const games=[];
+  for(let i=0;i<ids.length;i++) for(let j=i+1;j<ids.length;j++) games.push({home:ids[i], away:ids[j]});
+  return games;
+}
+function openTieModal(){
+  if(!hasPlayedRegularGame()){ showToast('Play some games first'); return; }
+  const groups=computeTieGroups();
+  if(!groups.length){ showToast('No teams are tied on every criteria right now'); return; }
+  App.tieDraft=groups.map((g,i)=>({
+    key:g.pool+'|'+g.order.slice().sort().join(','), pool:g.pool, start:g.start, resolved:g.resolved,
+    ids:g.rows.map(r=>r.team.id), rows:g.rows.map(r=>({id:r.team.id, rec:formatRecord(r), pts:r.points, diff:r.diff, pf:r.pf, pa:r.pa})),
+    mode:'game', games:tieDefaultGames(g.rows.map(r=>r.team.id)), order:g.order.slice()
+  }));
+  renderTieModal();
+}
+function renderTieModal(){
+  const t=App.current, d=App.tieDraft||[];
+  const nameOpt=(ids,cur)=>ids.map(id=>`<option value="${id}" ${cur===id?'selected':''}>${esc(teamName(id))}</option>`).join('');
+  const body=d.map((g,gi)=>{
+    const existing=t.games.filter(x=>x.isTiebreakerGame && g.ids.includes(x.home) && g.ids.includes(x.away));
+    return `<div class="card" style="margin-top:10px;">
+      <div class="row" style="align-items:center;">
+        <strong>${g.pool?esc(g.pool)+' \u00b7 ':''}${g.ids.length} teams tied from position ${g.start}</strong>
+        ${g.resolved?'<span class="pill" style="border-color:var(--accent2);color:var(--accent2);">\u2713 order settled</span>':''}
+      </div>
+      <table style="margin-top:6px;"><thead><tr><th class="team-cell" style="cursor:default;">Team</th><th style="cursor:default;">Rec</th><th style="cursor:default;">Pts</th><th style="cursor:default;">Diff</th><th style="cursor:default;">PF</th><th style="cursor:default;">PA</th></tr></thead>
+        <tbody>${g.rows.map(r=>`<tr><td class="team-cell">${teamBadgeHtml(r.id)}${esc(teamName(r.id))}</td><td>${r.rec}</td><td>${r.pts}</td><td>${r.diff>0?'+':''}${r.diff}</td><td>${r.pf}</td><td>${r.pa}</td></tr>`).join('')}</tbody></table>
+      <div class="muted" style="font-size:11.5px;margin-top:4px;">Identical on every tiebreaker you have set, so the order between them is still open.</div>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn ${g.mode==='game'?'primary':''}" onclick="tieSetMode(${gi},'game')">\u2694\ufe0f Tiebreaker games</button>
+        <button class="btn ${g.mode==='pick'?'primary':''}" onclick="tieSetMode(${gi},'pick')">\u261d\ufe0f Pick who moves on</button>
+      </div>
+      ${g.mode==='game' ? `
+        <div class="muted" style="font-size:11.5px;margin:8px 0 4px;">Choose the games to play. They go in a week called <strong>Tiebreakers</strong> and never count toward the standings \u2014 only toward who ranks higher.</div>
+        <div class="row" style="margin-bottom:6px;">
+          <button class="btn small" onclick="tiePreset(${gi},'rr')">Everyone plays everyone</button>
+          ${g.ids.length>2?`<button class="btn small" onclick="tiePreset(${gi},'pairs')">Pair them up</button>`:''}
+          <button class="btn small" onclick="tiePreset(${gi},'none')">Clear games</button>
+        </div>
+        <div class="col">${g.games.map((m,mi)=>`
+          <div class="row" style="align-items:center;flex-wrap:nowrap;">
+            <select style="flex:1;min-width:0;" onchange="tieSetGame(${gi},${mi},'away',this.value)">${nameOpt(g.ids,m.away)}</select>
+            <span class="muted">@</span>
+            <select style="flex:1;min-width:0;" onchange="tieSetGame(${gi},${mi},'home',this.value)">${nameOpt(g.ids,m.home)}</select>
+            <button class="btn small" title="Swap home/away" onclick="tieSwapGame(${gi},${mi})">\u21c4</button>
+            <button class="btn small danger" onclick="tieRemoveGame(${gi},${mi})">\u2715</button>
+          </div>`).join('') || '<div class="muted">No games chosen yet.</div>'}
+        </div>
+        <div class="row" style="margin-top:6px;"><button class="btn small" onclick="tieAddGame(${gi})">+ Add a game</button></div>
+        ${existing.length?`<div class="muted" style="font-size:11.5px;margin-top:8px;">Already created: ${existing.map(x=>`${esc(teamName(x.away))} @ ${esc(teamName(x.home))}${x.homeScore!=null?` (${x.awayScore}-${x.homeScore})`:' (not played)'}`).join(' \u00b7 ')}</div>`:''}
+        <div class="row" style="margin-top:8px;"><button class="btn primary" onclick="tieApplyGames(${gi})">Create these games</button></div>
+      ` : `
+        <div class="muted" style="font-size:11.5px;margin:8px 0 4px;">Put them in the order you want. The team at the top moves on / ranks highest.</div>
+        <div class="col">${g.order.map((id,oi)=>`
+          <div class="row" style="align-items:center;flex-wrap:nowrap;">
+            <span class="pill" style="min-width:30px;text-align:center;">${oi+1}</span>
+            <span style="flex:1;">${teamBadgeHtml(id)}${esc(teamName(id))}</span>
+            <button class="btn small" ${oi===0?'disabled':''} onclick="tieMove(${gi},${oi},-1)">\u2191</button>
+            <button class="btn small" ${oi===g.order.length-1?'disabled':''} onclick="tieMove(${gi},${oi},1)">\u2193</button>
+          </div>`).join('')}
+        </div>
+        <div class="row" style="margin-top:8px;"><button class="btn primary" onclick="tieApplyPick(${gi})">Save this order</button></div>
+      `}
+    </div>`;
+  }).join('');
+  const tbGames=t.games.filter(x=>x.isTiebreakerGame);
+  openModal(`
+    <div class="modal-head"><h3 style="margin:0;">Break ties</h3><button class="xbtn" onclick="closeModal()">\u2715</button></div>
+    <div class="modal-body">
+      <div class="muted" style="font-size:12px;">These teams are level on every tiebreaker in your settings. Decide how each tie gets settled.</div>
+      ${body}
+      ${tbGames.length?`<h4 style="margin-top:14px;">Tiebreaker games (${tbGames.length})</h4><div class="col">${tbGames.map(x=>`<div class="row card" style="padding:6px 10px;align-items:center;"><span style="flex:1;">${esc(teamName(x.away))} @ ${esc(teamName(x.home))}</span><span class="muted">${x.homeScore!=null?x.awayScore+' - '+x.homeScore:'not played'}</span><button class="btn small" onclick="closeModal();openGameModal('${x.id}')">Open</button><button class="btn small danger" onclick="tieDeleteGame('${x.id}')">Remove</button></div>`).join('')}</div>`:''}
+    </div>
+    <div class="modal-foot"><button class="btn primary" onclick="closeModal()">Done</button></div>
+  `,'wide');
+}
+function tieSetMode(gi,m){ App.tieDraft[gi].mode=m; renderTieModal(); }
+function tieSetGame(gi,mi,f,v){ App.tieDraft[gi].games[mi][f]=v; }
+function tieSwapGame(gi,mi){ const m=App.tieDraft[gi].games[mi]; [m.home,m.away]=[m.away,m.home]; renderTieModal(); }
+function tieRemoveGame(gi,mi){ App.tieDraft[gi].games.splice(mi,1); renderTieModal(); }
+function tieAddGame(gi){ const g=App.tieDraft[gi]; g.games.push({home:g.ids[0], away:g.ids[1]||g.ids[0]}); renderTieModal(); }
+function tiePreset(gi,kind){
+  const g=App.tieDraft[gi];
+  if(kind==='rr') g.games=tieDefaultGames(g.ids);
+  else if(kind==='none') g.games=[];
+  else { g.games=[]; for(let i=0;i+1<g.ids.length;i+=2) g.games.push({home:g.ids[i], away:g.ids[i+1]}); }
+  renderTieModal();
+}
+function tieMove(gi,oi,dir){ const o=App.tieDraft[gi].order, j=oi+dir; if(j<0||j>=o.length) return; [o[oi],o[j]]=[o[j],o[oi]]; renderTieModal(); }
+function ensureTiebreakerKey(key){
+  const s=App.current.settings;
+  if(!s.tiebreakers.includes(key)) s.tiebreakers.push(key);
+}
+function tieApplyGames(gi){
+  const t=App.current, g=App.tieDraft[gi];
+  const wk=tiebreakerWeekNum();
+  let created=0, bad=false;
+  g.games.forEach(m=>{
+    if(!m.home || !m.away || m.home===m.away){ bad=true; return; }
+    const dup=t.games.find(x=>x.isTiebreakerGame && ((x.home===m.home&&x.away===m.away)||(x.home===m.away&&x.away===m.home)) && x.homeScore==null);
+    if(dup) return;
+    t.games.push({id:uid('g'), week:wk, weekLabel:'Tiebreakers', home:m.home, away:m.away, homeScore:null, awayScore:null, ot:false, otPointsHome:0, otPointsAway:0, pk:false, time:'', location:'', neutralSite:false, isPlayoff:false, isTiebreakerGame:true, seriesId:null});
+    created++;
+  });
+  if(bad){ showToast('A game needs two different teams'); }
+  if(!created){ if(!bad) showToast('No new games to create'); return; }
+  ensureTiebreakerKey('extraGame');
+  scheduleSave(); renderTab();
+  showToast(`Created ${created} tiebreaker game${created===1?'':'s'} in the Tiebreakers week`);
+  openTieModal();
+}
+function tieApplyPick(gi){
+  const t=App.current, g=App.tieDraft[gi];
+  if(!t.tieDecisions) t.tieDecisions=[];
+  const key=g.ids.slice().sort().join(',');
+  t.tieDecisions=t.tieDecisions.filter(d=>d.teams.slice().sort().join(',')!==key);
+  t.tieDecisions.push({id:uid('tie'), teams:g.ids.slice(), order:g.order.slice()});
+  ensureTiebreakerKey('manualPick');
+  scheduleSave(); renderTab();
+  showToast('Order saved');
+  openTieModal();
+}
+function tieDeleteGame(id){
+  const t=App.current;
+  t.games=t.games.filter(x=>x.id!==id);
+  scheduleSave(); renderTab(); openTieModal();
+}
+/* Marks next to team names in the standings */
+function tiebreakMarkInfo(){
+  const t=App.current;
+  if(!App._tbMarks || App._tbMarks.version!==App.dataVersion){
+    const beat={}, pick={};
+    t.games.forEach(g=>{
+      if(!g.isTiebreakerGame || g.homeScore==null || g.homeScore===g.awayScore) return;
+      const w=g.homeScore>g.awayScore?g.home:g.away, l=w===g.home?g.away:g.home;
+      (beat[w]=beat[w]||[]).push(l);
+    });
+    (t.tieDecisions||[]).forEach(d=>{
+      d.order.forEach((id,i)=>{ if(i<d.order.length-1) pick[id]={rank:i+1, of:d.order.length, others:d.order.filter(x=>x!==id)}; });
+    });
+    App._tbMarks={version:App.dataVersion, beat, pick};
+  }
+  return App._tbMarks;
+}
+function tiebreakMark(teamId){
+  const m=tiebreakMarkInfo(); let html='';
+  if(m.beat[teamId]) html+=`<sup class="tb-mark" title="Won a tiebreaker game over ${esc(m.beat[teamId].map(teamName).join(', '))}">\u2020</sup>`;
+  if(m.pick[teamId]) html+=`<sup class="tb-mark" title="Moved on by manual pick (ranked #${m.pick[teamId].rank} of ${m.pick[teamId].of}) ahead of ${esc(m.pick[teamId].others.map(teamName).slice(m.pick[teamId].rank-1).join(', '))}">\u2021</sup>`;
+  return html;
+}
+function tiebreakLegend(){
+  const m=tiebreakMarkInfo();
+  const parts=[];
+  if(Object.keys(m.beat).length) parts.push('\u2020 won a tiebreaker game over another team');
+  if(Object.keys(m.pick).length) parts.push('\u2021 moved on by manual pick');
+  return parts.length ? ` \u00b7 ${parts.join(' \u00b7 ')}` : '';
+}
+function tieButtonHtml(){
+  return hasPlayedRegularGame() ? `<button class="btn small" onclick="openTieModal()">\u2694\ufe0f Break ties</button>` : '';
+}
+function brandOn(){ const b=App.current && App.current.settings.teamBranding; return !!(b && b.enabled); }
+function hexRgba(hex,a){
+  const m=/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec((hex||'').trim()); if(!m) return null;
+  let h=m[1]; if(h.length===3) h=h.split('').map(c=>c+c).join('');
+  const n=parseInt(h,16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+}
+/* Team colour that starts solid at the edge and melts away toward the score */
+function teamFadeStyle(teamId, strength){
+  if(!brandOn()) return '';
+  const tm=teamById(teamId); if(!tm || !tm.color) return '';
+  const a=hexRgba(tm.color, strength||0.5); if(!a) return '';
+  return `background-image:linear-gradient(90deg, ${a} 0%, ${hexRgba(tm.color,0.16)} 52%, rgba(0,0,0,0) 88%);box-shadow:inset 4px 0 0 ${tm.color};`;
+}
+function teamRecordLines(teamId){
+  const t=App.current, s=t.settings;
+  const tm=teamById(teamId); if(!tm) return '';
+  const reg=t.games.filter(isRegularSeasonGame);
+  const parts=[`<span>${formatRecord(computeRecord(teamId, reg))}</span>`];
+  if(s.useConferences && tm.conference){
+    const cg=reg.filter(g=>{ const h=teamById(g.home), a=teamById(g.away); return h&&a&&h.conference===tm.conference&&a.conference===tm.conference; });
+    parts.push(`<span>Conf ${formatRecord(computeRecord(teamId, cg))}</span>`);
+  }
+  if((s.divisionNames||[]).length>1 && tm.division){
+    const dg=reg.filter(g=>{ const h=teamById(g.home), a=teamById(g.away); return h&&a&&h.division===tm.division&&a.division===tm.division; });
+    parts.push(`<span>Div ${formatRecord(computeRecord(teamId, dg))}</span>`);
+  }
+  return parts.join('<span class="sb-dot">\u00b7</span>');
+}
+function scoreboardHtml(g, ppgAway, ppgHome, awayRecAway, homeRecAtHome){
+  const played=g.homeScore!=null, awayWon=played&&g.awayScore>g.homeScore, homeWon=played&&g.homeScore>g.awayScore;
+  const row=(id, side, score, won, extra)=>{
+    const tm=teamById(id);
+    const dot = brandOn() && tm && tm.color ? '' : '';
+    return `<div class="sb-team${won?' won':''}${played&&!won&&g.homeScore!==g.awayScore?' lost':''}" style="${teamFadeStyle(id,0.6)}">
+      <div class="sb-id">
+        <div class="sb-name">${teamBadgeHtml(id)}${esc(teamName(id))} <span class="sb-side">${side}</span></div>
+        <div class="sb-rec">${teamRecordLines(id)}</div>
+        <div class="sb-sub">${extra}</div>
+      </div>
+      <div class="sb-score">${played?score:'\u2013'}</div>
+    </div>`;
+  };
+  return `<div class="scoreboard">
+    ${row(g.away,'AWAY',g.awayScore,awayWon,`PPG ${ppgAway} \u00b7 Away ${formatRecord(awayRecAway)}`)}
+    ${row(g.home,'HOME',g.homeScore,homeWon,`PPG ${ppgHome} \u00b7 Home ${formatRecord(homeRecAtHome)}`)}
+  </div>`;
 }
 
 function computeClinchElimForPoolRows(teamId, rows, spotCount, remCount){
@@ -3569,7 +3887,7 @@ function computeClinchElimForPoolRows(teamId, rows, spotCount, remCount){
 function computeRemainingCountMap(gamesOverride){
   const t=App.current;
   const allGames = gamesOverride || t.games;
-  const remaining = allGames.filter(g=>!g.isPlayoff && g.homeScore==null);
+  const remaining = allGames.filter(g=>!g.isPlayoff && !g.isTiebreakerGame && g.homeScore==null);
   const remCount={}; t.teams.forEach(tm=>remCount[tm.id]=0);
   remaining.forEach(g=>{ if(remCount[g.home]!=null) remCount[g.home]++; if(remCount[g.away]!=null) remCount[g.away]++; });
   return remCount;
@@ -3841,7 +4159,7 @@ function scenarioText(teamId){
   const info=clinchElimInfo(teamId);
   if(info.clinched) return 'Has already clinched a playoff spot.';
   if(info.eliminated) return 'Eliminated \u2014 no path to the playoffs remains.';
-  const remaining = t.games.filter(g=>!g.isPlayoff && g.homeScore==null && (g.home===teamId||g.away===teamId));
+  const remaining = t.games.filter(g=>!g.isPlayoff && !g.isTiebreakerGame && g.homeScore==null && (g.home===teamId||g.away===teamId));
   if(!remaining.length) return 'Season complete \u2014 waiting on other results.';
   const withOpp = remaining.map(g=>{
     const oppId = g.home===teamId?g.away:g.home;
@@ -3856,19 +4174,27 @@ function scenarioText(teamId){
 }
 
 /* ---- relegation clinch/simulation ---- */
+/* ---- relegation: spots, clinch letters and odds (with or without promotion/relegation playoffs) ---- */
+function relegationSpots(){
+  const s=App.current.settings, rp=s.relegation.playoff||{}, n=s.relegation.numMoving||0;
+  const promoPO = !!(rp.enabled && rp.promoTeams>=2 && n>=1);
+  const relegPO = !!(rp.enabled && rp.relegTeams>=2 && n>=1);
+  return {n, rp, promoPO, relegPO, autoPromo:Math.max(0,n-(promoPO?1:0)), autoReleg:Math.max(0,n-(relegPO?1:0))};
+}
 function computeTierClinchMaps(){
   const t=App.current, s=t.settings;
   const promotedMap={}, relegatedMap={}, tierChampMap={};
   if(!s.relegation.enabled) return {promotedMap, relegatedMap, tierChampMap};
   const remCount = computeRemainingCountMap();
+  const sp = relegationSpots();
   s.divisionNames.forEach((tierName, tierIdx)=>{
     const pool = t.teams.filter(x=>x.division===tierName);
     const rows = standingsRows(pool, t.games, false);
-    const numMoving = s.relegation.numMoving||0;
-    if(tierIdx>0) rows.forEach(r=>{ promotedMap[r.team.id]=computeClinchElimForPoolRows(r.team.id, rows, numMoving, remCount).clinched; });
+    // Only the AUTOMATIC spots can be clinched by standings; a spot decided by a playoff is not clinched by the table.
+    if(tierIdx>0) rows.forEach(r=>{ promotedMap[r.team.id]= sp.autoPromo>0 && computeClinchElimForPoolRows(r.team.id, rows, sp.autoPromo, remCount).clinched; });
     if(tierIdx<s.divisionNames.length-1){
       const reversedRows = rows.slice().reverse();
-      rows.forEach(r=>{ relegatedMap[r.team.id]=computeClinchElimForPoolRows(r.team.id, reversedRows, numMoving, remCount).clinched; });
+      rows.forEach(r=>{ relegatedMap[r.team.id]= sp.autoReleg>0 && computeClinchElimForPoolRows(r.team.id, reversedRows, sp.autoReleg, remCount).clinched; });
     }
     if(rows.length){
       const leader=rows[0];
@@ -3880,26 +4206,87 @@ function computeTierClinchMaps(){
   });
   return {promotedMap, relegatedMap, tierChampMap};
 }
-function computeTierSimMaps(){
-  const t=App.current, s=t.settings;
-  const sims = adaptiveSims(300);
-  const promoCount={}, relegCount={}, champCount={};
-  t.teams.forEach(tm=>{ promoCount[tm.id]=0; relegCount[tm.id]=0; champCount[tm.id]=0; });
-  App._simTiebreakMode=true;
-  for(let i=0;i<sims;i++){
-    const simGames = simClone(t.games);
-    simGames.forEach(g=>{ if(g.homeScore!=null) return; const r=computeRandomScore(g,s); g.homeScore=r.h; g.awayScore=r.a; g.ot=r.ot; g.pk=r.pk; });
-    s.divisionNames.forEach((tierName,tierIdx)=>{
-      const pool=t.teams.filter(x=>x.division===tierName);
-      const rows=standingsRows(pool, simGames, false);
-      const numMoving=s.relegation.numMoving||0;
-      if(tierIdx>0) rows.slice(0,numMoving).forEach(r=>promoCount[r.team.id]++);
-      if(tierIdx<s.divisionNames.length-1) rows.slice(Math.max(0,rows.length-numMoving)).forEach(r=>relegCount[r.team.id]++);
-      if(rows[0]) champCount[rows[0].team.id]++;
-    });
+function simMiniSeries(a,b,gamesToWin,s){
+  let wa=0, wb=0, i=0;
+  while(wa<gamesToWin && wb<gamesToWin && i<41){
+    const home=(i%2===0)?a:b, away=home===a?b:a;
+    const r=computeRandomScore({home,away,isPlayoff:true}, s);
+    let hs=r.h, as=r.a;
+    if(hs===as){ if(Math.random()<0.5) hs++; else as++; }
+    const homeWon=hs>as;
+    if((homeWon&&home===a)||(!homeWon&&away===a)) wa++; else wb++;
+    i++;
   }
-  App._simTiebreakMode=false;
-  return {sims, promoCount, relegCount, champCount};
+  return wa>wb ? a : b;
+}
+function simMiniBracket(ids, gamesToWin, s){
+  if(ids.length<2) return {champ:ids[0]||null, runnerUp:null};
+  let size=1; while(size<ids.length) size*=2;
+  const order=standardSeedOrder(size);
+  let cur=order.map(sn=> sn<=ids.length ? ids[sn-1] : null);
+  let champ=null, runnerUp=null;
+  while(cur.length>1){
+    const next=[]; let last=null;
+    for(let i=0;i<cur.length;i+=2){
+      const A=cur[i], B=cur[i+1];
+      if(A&&B){ const w=simMiniSeries(A,B,gamesToWin,s); next.push(w); last=[A,B,w]; }
+      else next.push(A||B);
+    }
+    if(next.length===1){ champ=next[0]; if(last) runnerUp = last[0]===champ ? last[1] : last[0]; }
+    cur=next;
+  }
+  return {champ, runnerUp};
+}
+/* If a promotion/relegation playoff has already been seeded, its real teams (and result, if finished) replace the projection. */
+function relegationPlayoffOverride(tierName, kind){
+  const t=App.current, b=t.relegationPlayoffBrackets && t.relegationPlayoffBrackets[tierName+':'+kind];
+  if(!b || !b.series || !b.series.length) return null;
+  const ids=[];
+  b.series.filter(x=>x.round===0).forEach(x=>{ if(x.teamA) ids.push(x.teamA); if(x.teamB) ids.push(x.teamB); });
+  let fixed=null;
+  try{
+    const champ=relegationPlayoffChampion(b);
+    if(champ) fixed={champ, runnerUp:relegationPlayoffLoser(b)};
+  }catch(e){}
+  return {ids, fixed};
+}
+function computeTierSimMaps(){
+  const t=App.current, s=t.settings, sp=relegationSpots(), rp=sp.rp;
+  const sims = adaptiveSims(300);
+  const mk=()=>{ const o={}; t.teams.forEach(tm=>{ o[tm.id]=0; }); return o; };
+  const C={autoPromo:mk(), inPromoPO:mk(), promoPOWin:mk(), autoReleg:mk(), inRelegPO:mk(), relegPOLose:mk(), champ:mk(), posSum:mk()};
+  const tiers=s.divisionNames.map((name,idx)=>({name, idx, pool:t.teams.filter(x=>x.division===name), promoOv: (idx>0&&sp.promoPO)?relegationPlayoffOverride(name,'promo'):null, relegOv:(idx<s.divisionNames.length-1&&sp.relegPO)?relegationPlayoffOverride(name,'releg'):null}));
+  App._simTiebreakMode=true;
+  try{
+    for(let i=0;i<sims;i++){
+      const simGames = simClone(t.games);
+      simGames.forEach(g=>{ if(g.homeScore!=null) return; const r=computeRandomScore(g,s); g.homeScore=r.h; g.awayScore=r.a; g.ot=r.ot; g.pk=r.pk; });
+      tiers.forEach(tier=>{
+        const rows=standingsRows(tier.pool, simGames, false), len=rows.length;
+        rows.forEach((r,ix)=>{ C.posSum[r.team.id]+=ix+1; });
+        if(rows[0]) C.champ[rows[0].team.id]++;
+        if(tier.idx>0){
+          rows.slice(0, sp.autoPromo).forEach(r=>C.autoPromo[r.team.id]++);
+          if(sp.promoPO){
+            const zone = tier.promoOv ? tier.promoOv.ids : rows.slice(sp.autoPromo, sp.autoPromo+rp.promoTeams).map(r=>r.team.id);
+            zone.forEach(id=>{ if(C.inPromoPO[id]!=null) C.inPromoPO[id]++; });
+            const res = (tier.promoOv && tier.promoOv.fixed) ? tier.promoOv.fixed : simMiniBracket(zone, rp.promoGamesToWin||1, s);
+            if(res.champ && C.promoPOWin[res.champ]!=null) C.promoPOWin[res.champ]++;
+          }
+        }
+        if(tier.idx<s.divisionNames.length-1){
+          if(sp.autoReleg>0) rows.slice(Math.max(0,len-sp.autoReleg)).forEach(r=>C.autoReleg[r.team.id]++);
+          if(sp.relegPO){
+            const zone = tier.relegOv ? tier.relegOv.ids : rows.slice(Math.max(0,len-sp.autoReleg-rp.relegTeams), Math.max(0,len-sp.autoReleg)).map(r=>r.team.id);
+            zone.forEach(id=>{ if(C.inRelegPO[id]!=null) C.inRelegPO[id]++; });
+            const res = (tier.relegOv && tier.relegOv.fixed) ? tier.relegOv.fixed : simMiniBracket(zone, rp.relegGamesToWin||1, s);
+            if(res.runnerUp && C.relegPOLose[res.runnerUp]!=null) C.relegPOLose[res.runnerUp]++;
+          }
+        }
+      });
+    }
+  } finally { App._simTiebreakMode=false; }
+  return {sims, counts:C};
 }
 function ensureTierCache(){
   const t=App.current;
@@ -3923,42 +4310,21 @@ function ensureTierCache(){
 function ensureTierOdds(){
   const t=App.current;
   if(!App.tierOddsCache || App.tierOddsCache.version!==App.dataVersion){
-    const sim=computeTierSimMaps();
-    const promoOddsMap={}, relegOddsMap={}, champOddsMap={};
-    t.teams.forEach(tm=>{
-      promoOddsMap[tm.id]=Math.round(100*sim.promoCount[tm.id]/sim.sims);
-      relegOddsMap[tm.id]=Math.round(100*sim.relegCount[tm.id]/sim.sims);
-      champOddsMap[tm.id]=Math.round(100*sim.champCount[tm.id]/sim.sims);
-    });
-    App.tierOddsCache = {version:App.dataVersion, promoOddsMap, relegOddsMap, champOddsMap};
+    const {sims, counts}=computeTierSimMaps();
+    App.tierOddsCache = {version:App.dataVersion, sims, counts};
   }
   return App.tierOddsCache;
 }
-
-function generateTiebreakerGames(){
-  const t=App.current, s=t.settings;
-  if(!s.tiebreakerGame.enabled){ showToast('Enable the extra-game tiebreaker in Settings first'); return; }
-  const rows = standingsRows(t.teams, t.games, false);
-  let created=0;
-  const maxWeek = Math.max(0,...t.games.filter(g=>!g.isPlayoff).map(g=>g.week||0));
-  const tied=(r1,r2)=> r1.points===r2.points && r1.pf===r2.pf && r1.pa===r2.pa;
-  function maybeCreate(a,b){
-    if(isTiebreakerGamePlayed(a.team.id,b.team.id)) return;
-    if(t.games.find(g=>g.isTiebreakerGame && g.homeScore==null && ((g.home===a.team.id&&g.away===b.team.id)||(g.home===b.team.id&&g.away===a.team.id)))) return;
-    t.games.push({id:uid('g'), week:maxWeek+1, home:a.team.id, away:b.team.id, homeScore:null, awayScore:null, ot:false, otPointsHome:0, otPointsAway:0, pk:false, time:'', location:'', neutralSite:false, isPlayoff:false, isTiebreakerGame:true, seriesId:null});
-    created++;
-  }
-  if(s.tiebreakerGame.scope==='league'){
-    if(rows.length>=2 && tied(rows[0],rows[1])) maybeCreate(rows[0],rows[1]);
-  } else if(s.tiebreakerGame.scope==='playoff' && s.playoffs.enabled && s.playoffs.basis==='league'){
-    const n=s.playoffs.teamsCount;
-    if(rows[n-1] && rows[n] && tied(rows[n-1],rows[n])) maybeCreate(rows[n-1],rows[n]);
-  } else {
-    for(let i=0;i<rows.length-1;i++){ if(tied(rows[i],rows[i+1])) maybeCreate(rows[i],rows[i+1]); }
-  }
-  scheduleSave(); renderTab();
-  showToast(created? `Created ${created} tiebreaker game(s) \u2014 check the Schedule tab` : 'No qualifying tie found right now');
+function oddsPctText(count, sims){
+  if(!sims) return '-';
+  if(count<=0) return '0%';
+  if(count>=sims) return '100%';
+  const p=100*count/sims;
+  if(p<1) return '<1%';
+  if(p>99) return '>99%';
+  return Math.round(p)+'%';
 }
+function generateTiebreakerGames(){ openTieModal(); }
 
 /* ================================ STANDINGS TAB ================================ */
 function renderStandings(){
@@ -3969,8 +4335,8 @@ function renderStandings(){
     <div class="col">
       <div class="row">
         <span class="pill">Leagues & tiers (top to bottom)</span>
-        <span class="muted" style="margin-left:auto;font-size:11px;">Z=clinched winning this tier \u00b7 P=clinched promotion \u00b7 E=clinched relegation</span>
-        ${s.tiebreakerGame && s.tiebreakerGame.enabled?`<button class="btn small" onclick="generateTiebreakerGames()">\u2694\ufe0f Generate tiebreaker games</button>`:''}
+        <span class="muted" style="margin-left:auto;font-size:11px;">Z=clinched winning this tier \u00b7 P=clinched promotion \u00b7 E=clinched relegation${tiebreakLegend()}</span>
+        ${tieButtonHtml()}
       </div>
       ${renderStandingsBody()}
     </div>`;
@@ -3980,8 +4346,8 @@ function renderStandings(){
   <div class="col">
     <div class="row">
       ${scopes.map(([id,label])=>`<button class="btn ${App.standingsScope===id?'primary':''}" onclick="App.standingsScope='${id}';renderTab();">${label}</button>`).join('')}
-      <span class="muted" style="margin-left:auto;font-size:11px;">Z=best league \u00b7 Y=best conf \u00b7 X=best division \u00b7 P=clinched playoff spot \u00b7 B=clinched a bye \u00b7 E=mathematically eliminated · letters only show once clinched</span>
-      ${s.tiebreakerGame && s.tiebreakerGame.enabled?`<button class="btn small" onclick="generateTiebreakerGames()">\u2694\ufe0f Generate tiebreaker games</button>`:''}
+      <span class="muted" style="margin-left:auto;font-size:11px;">Z=best league \u00b7 Y=best conf \u00b7 X=best division \u00b7 P=clinched playoff spot \u00b7 B=clinched a bye \u00b7 E=mathematically eliminated · letters only show once clinched${tiebreakLegend()}</span>
+      ${tieButtonHtml()}
     </div>
     ${renderStandingsBody()}
   </div>`;
@@ -4078,7 +4444,7 @@ function renderStandingsBody(){
             const gb = gbOf(r, baseRows);
             const cutoffRow = showCutoff && idx===cutoffCount ? `<tr class="cutoff-row"><td colspan="${colDefs.length+1}" style="padding:0;border-bottom:2px dashed var(--accent2);"></td></tr>` : '';
             return `${cutoffRow}<tr>
-              <td class="team-cell" style="cursor:pointer;" onclick="openTeamModal('${r.team.id}')">${i+1}. ${teamBadgeHtml(r.team.id)}${esc(r.team.name)}${letters}</td>
+              <td class="team-cell" style="cursor:pointer;" onclick="openTeamModal('${r.team.id}')">${i+1}. ${teamBadgeHtml(r.team.id)}${esc(r.team.name)}${letters}${tiebreakMark(r.team.id)}</td>
               ${colDefs.map(([k])=>{
                 if(k==='pts') return `<td><strong>${r.points}</strong></td>`;
                 if(k==='gp') return `<td>${r.gp}</td>`;
@@ -4238,7 +4604,7 @@ function computeByeRecipients(madeSet, simGames){
 }
 function computeOddsData(){
   const t=App.current, s=t.settings, P=App.prefs.perf, oc=P.oddsCols;
-  const remaining = t.games.filter(g=>!g.isPlayoff && g.homeScore==null);
+  const remaining = t.games.filter(g=>!g.isPlayoff && !g.isTiebreakerGame && g.homeScore==null);
   const wantMade = s.playoffs.enabled && oc.playoff, wantBye = s.playoffs.enabled && oc.bye;
   const wantDiv = !!oc.division, wantConf = s.useConferences && oc.conference, wantLeague = !!oc.league;
   const anySim = wantMade || wantBye || wantDiv || wantConf || wantLeague;
@@ -4348,29 +4714,56 @@ function renderRelegationOdds(){
     App._oddsT=setTimeout(()=>{ if(App.tab==='odds'){ ensureTierOdds(); renderTab(); } }, 30);
     return oddsLoadingCard();
   }
-  const tc = App.tierOddsCache;
+  const {sims, counts:C} = App.tierOddsCache, sp=relegationSpots(), rp=sp.rp;
+  const last=s.divisionNames.length-1;
+  const pc=(m,id)=>oddsPctText(m[id]||0, sims);
+  const ordinalRange=(a,b)=> a===b ? ordinal(a) : `${ordinal(a)}\u2013${ordinal(b)}`;
+  const tierCards = s.divisionNames.map((tierName,tierIdx)=>{
+    const pool = t.teams.filter(x=>x.division===tierName);
+    const rows = standingsRows(pool, t.games, false);
+    const hasUp = tierIdx>0, hasDown = tierIdx<last;
+    const notes=[];
+    if(hasUp){
+      if(sp.promoPO) notes.push(`<strong>Promotion:</strong> top ${sp.autoPromo} go up automatically${sp.autoPromo?'':' (none)'}; ${ordinalRange(sp.autoPromo+1, sp.autoPromo+rp.promoTeams)} enter the promotion playoff and its champion also goes up.`);
+      else notes.push(`<strong>Promotion:</strong> top ${sp.n} go up.`);
+    }
+    if(hasDown){
+      if(sp.relegPO) notes.push(`<strong>Relegation:</strong> bottom ${sp.autoReleg} drop automatically${sp.autoReleg?'':' (none)'}; the ${rp.relegTeams} just above them enter the relegation playoff and its runner-up also drops.`);
+      else notes.push(`<strong>Relegation:</strong> bottom ${sp.n} drop.`);
+    }
+    const heads=[
+      hasUp ? (sp.promoPO ? '<th>Auto promotion</th><th>In promotion playoff</th><th>Win playoff</th><th>Promoted (total)</th>' : '<th>Promotion spot</th>') : '',
+      hasDown ? (sp.relegPO ? '<th>Auto relegation</th><th>In relegation playoff</th><th>Lose playoff</th><th>Relegated (total)</th>' : '<th>Relegation spot</th>') : '',
+      (hasUp||hasDown) ? '<th>Stay in tier</th>' : '',
+      '<th>Win tier</th><th>Avg finish</th>'
+    ].join('');
+    const body = rows.map(r=>{
+      const id=r.team.id;
+      const promoTotal = (C.autoPromo[id]||0)+(C.promoPOWin[id]||0);
+      const relegTotal = (C.autoReleg[id]||0)+(C.relegPOLose[id]||0);
+      const stay = Math.max(0, sims - (hasUp?promoTotal:0) - (hasDown?relegTotal:0));
+      return `<tr>
+        <td class="team-cell" style="cursor:pointer;" onclick="openTeamModal('${id}')">${teamBadgeHtml(id)}${esc(r.team.name)}</td>
+        <td>${formatRecord(r)}</td><td>${r.points}</td>
+        ${hasUp ? (sp.promoPO ? `<td>${pc(C.autoPromo,id)}</td><td>${pc(C.inPromoPO,id)}</td><td>${pc(C.promoPOWin,id)}</td><td><strong>${oddsPctText(promoTotal,sims)}</strong></td>` : `<td><strong>${oddsPctText(promoTotal,sims)}</strong></td>`) : ''}
+        ${hasDown ? (sp.relegPO ? `<td>${pc(C.autoReleg,id)}</td><td>${pc(C.inRelegPO,id)}</td><td>${pc(C.relegPOLose,id)}</td><td><strong>${oddsPctText(relegTotal,sims)}</strong></td>` : `<td><strong>${oddsPctText(relegTotal,sims)}</strong></td>`) : ''}
+        ${(hasUp||hasDown) ? `<td>${oddsPctText(stay,sims)}</td>` : ''}
+        <td>${pc(C.champ,id)}</td>
+        <td>${(C.posSum[id]/sims).toFixed(1)}</td>
+      </tr>`;
+    }).join('');
+    return `<div class="card" style="overflow-x:auto;">
+      <h4>${esc(tierName)}</h4>
+      <div class="muted" style="font-size:11.5px;margin-bottom:6px;">${notes.join('<br>')||'No promotion or relegation at this level.'}</div>
+      <table><thead><tr><th class="team-cell">Team</th><th>Rec</th><th>Pts</th>${heads}</tr></thead><tbody>${body}</tbody></table>
+    </div>`;
+  }).join('');
   return `<div class="col">
-    ${s.divisionNames.map((tierName,tierIdx)=>{
-      const pool = t.teams.filter(x=>x.division===tierName);
-      const poolRows = standingsRows(pool, t.games, false);
-      return `<div class="card" style="overflow-x:auto;">
-        <h4>${esc(tierName)}</h4>
-        <table><thead><tr><th class="team-cell">Team</th><th>Pts</th>
-          ${tierIdx>0?'<th>Promotion odds</th>':''}
-          ${tierIdx<s.divisionNames.length-1?'<th>Relegation odds</th>':''}
-          <th>Win this tier</th>
-        </tr></thead>
-        <tbody>${poolRows.map(r=>`<tr>
-          <td class="team-cell" style="cursor:pointer;" onclick="openTeamModal('${r.team.id}')">${esc(r.team.name)}</td>
-          <td>${r.points}</td>
-          ${tierIdx>0?`<td>${tc.promoOddsMap[r.team.id]}%</td>`:''}
-          ${tierIdx<s.divisionNames.length-1?`<td>${tc.relegOddsMap[r.team.id]}%</td>`:''}
-          <td>${tc.champOddsMap[r.team.id]}%</td>
-        </tr>`).join('')}</tbody></table>
-      </div>`;
-    }).join('')}
+    <div class="card"><div class="row"><button class="btn small" onclick="App.tierOddsCache=null;renderTab();">\ud83d\udd04 Recalculate odds</button><button class="btn small" onclick="openPerfModal()">\u26a1 Speed settings</button><span class="muted" style="font-size:11px;">Based on ${sims} simulated finishes of the rest of the season${(sp.promoPO||sp.relegPO)?', including the promotion/relegation playoffs':''}. "&lt;1%" and "&gt;99%" mean possible but very unlikely or very likely, not guaranteed.</span></div></div>
+    ${tierCards}
   </div>`;
 }
+
 function renderOdds(){
   const t=App.current, s=t.settings, P=App.prefs.perf, oc=P.oddsCols;
   if(s.relegation.enabled) return renderRelegationOdds();
@@ -4455,7 +4848,7 @@ function adaptiveSims(base){
   if(!t) return base;
   const q = ({fast:0.25, balanced:0.6, accurate:1})[App.prefs.perf.simQuality] || 0.6;
   const n = t.teams.length || 1;
-  const remaining = t.games.filter(g=>!g.isPlayoff && g.homeScore==null).length;
+  const remaining = t.games.filter(g=>!g.isPlayoff && !g.isTiebreakerGame && g.homeScore==null).length;
   const costPerSim = Math.max(1, remaining) + n*0.3;
   const budget = 160000*q;
   const sims = Math.round(budget / costPerSim);
@@ -5575,7 +5968,7 @@ function seriesTeamRowHtml(teamId, seed, name, score, isWinner, isBye){
   const cls = 'series-team' + (isWinner===true?' winner':'') + (isWinner===false?' loser':'');
   const seedHtml = seed ? `<span class="series-seed">${seed}</span>` : '<span class="series-seed series-seed-blank"></span>';
   const nameHtml = isBye ? `<span class="series-name muted">BYE</span>` : `<span class="series-name">${teamId?teamBadgeHtml(teamId):''}${esc(name)}</span>`;
-  return `<div class="${cls}">${seedHtml}${nameHtml}<span class="series-score">${score!==''&&score!=null?score:''}</span></div>`;
+  return `<div class="${cls}" style="${teamId&&!isBye?teamFadeStyle(teamId,0.5):''}">${seedHtml}${nameHtml}<span class="series-score">${score!==''&&score!=null?score:''}</span></div>`;
 }
 function renderSeriesCard(sObj){
   const rec=seriesRecord(sObj);
@@ -6532,42 +6925,385 @@ function openLegacyTeamModal(teamId){
 }
 
 /* ================================ STATS TAB ================================ */
-function renderStats(){
-  const t=App.current;
-  const metrics = {pf:'Points For', pa:'Points Against', diff:'Point Differential', pct:'Win %', ppg:'Points Per Game', points:'Standings Points'};
-  return `
-  <div class="col">
-    <div class="row">
-      <button class="btn ${App.statsView!=='playoffs'?'primary':''}" onclick="App.statsView='stats';renderTab();">\ud83d\udcca Team Stats</button>
-      <button class="btn ${App.statsView==='playoffs'?'primary':''}" onclick="App.statsView='playoffs';renderTab();">\ud83c\udfc6 Playoff Standings</button>
+const GRAPH_PALETTE = ['#4f8cff','#f59e0b','#22c58a','#ef4444','#a855f7','#06b6d4','#ec4899','#84cc16','#f97316','#14b8a6','#eab308','#8b5cf6'];
+const TIME_METRICS = {
+  place:'Place in standings', points:'Standings points', ppg:'Points per game', papg:'Points allowed per game',
+  pf:'Points for', pa:'Points against', diff:'Plus / minus', dpg:'Plus / minus per game', pct:'Win %', wins:'Wins'
+};
+const SCATTER_METRICS = Object.assign({}, TIME_METRICS, {losses:'Losses', sos:'Strength of schedule', skill:'Team rating'});
+const LIST_METRICS = {pf:'Points For', pa:'Points Against', diff:'Point Differential', pct:'Win %', ppg:'Points Per Game', papg:'Points Allowed Per Game', points:'Standings Points', wins:'Wins', losses:'Losses'};
+
+function statsDefaults(){
+  const S=App.statsSel;
+  if(!S.gMetric) S.gMetric='place';
+  if(!S.xMetric) S.xMetric='ppg';
+  if(!S.yMetric) S.yMetric='place';
+  if(!S.placeScope) S.placeScope = App.current.settings.relegation.enabled ? 'division' : 'league';
+  if(!S.recScope) S.recScope='regular';
+  if(!S.listMetric) S.listMetric=(S.metric && LIST_METRICS[S.metric])?S.metric:'pf';
+  if(!S.gTeams) S.gTeams=null;
+}
+function graphTeamIds(){
+  const t=App.current, S=App.statsSel;
+  let ids=(S.gTeams||[]).filter(id=>t.teams.some(x=>x.id===id));
+  if(S.gTeams===null){
+    ids=cachedLeagueRows().slice(0,5).map(r=>r.team.id);
+  }
+  return ids;
+}
+function toggleGraphTeam(id){
+  const S=App.statsSel; if(S.gTeams===null) S.gTeams=graphTeamIds();
+  const i=S.gTeams.indexOf(id); if(i>=0) S.gTeams.splice(i,1); else S.gTeams.push(id);
+  renderTab();
+}
+function setGraphTeams(kind){
+  const t=App.current, S=App.statsSel;
+  if(kind==='all') S.gTeams=t.teams.map(x=>x.id);
+  else if(kind==='none') S.gTeams=[];
+  else if(kind==='top') S.gTeams=cachedLeagueRows().slice(0,5).map(r=>r.team.id);
+  else if(kind==='bottom') S.gTeams=cachedLeagueRows().slice(-5).map(r=>r.team.id);
+  renderTab();
+}
+function graphColor(teamId, idx){
+  const tm=teamById(teamId);
+  if(brandOn() && tm && tm.color) return tm.color;
+  return GRAPH_PALETTE[idx%GRAPH_PALETTE.length];
+}
+function chartDims(){
+  const narrow = currentDevice()==='iphone' && App.prefs.iphoneOrientation!=='horizontal';
+  return narrow ? {w:420,h:340,font:10.5} : {w:780,h:390,font:11.5};
+}
+function niceTicks(min,max,n){
+  if(min===max){ min-=1; max+=1; }
+  const span=max-min, raw=span/Math.max(1,n);
+  const mag=Math.pow(10,Math.floor(Math.log10(raw)));
+  const norm=raw/mag; const step=(norm<=1?1:norm<=2?2:norm<=5?5:10)*mag;
+  const lo=Math.floor(min/step)*step, hi=Math.ceil(max/step)*step;
+  const ticks=[]; for(let v=lo; v<=hi+step/2; v+=step) ticks.push(+v.toFixed(10));
+  return ticks;
+}
+function fmtVal(metric,v){
+  if(v==null||isNaN(v)) return '-';
+  if(metric==='place') return ordinal(Math.round(v));
+  if(metric==='pct') return (v*100).toFixed(1)+'%';
+  if(Number.isInteger(v) && metric!=='sos' && metric!=='pct') return String(v);
+  if(metric==='ppg'||metric==='papg'||metric==='dpg'||metric==='sos') return Math.abs(v)>=100? v.toFixed(0) : (metric==='sos'? v.toFixed(3) : v.toFixed(1));
+  if(metric==='diff') return (v>0?'+':'')+Math.round(v);
+  return String(Math.round(v*10)/10);
+}
+/* Season-to-date numbers after every week (cached until a score changes) */
+function weeklySeries(){
+  const t=App.current, s=t.settings;
+  if(App._wkSeries && App._wkSeries.version===App.dataVersion && App._wkSeries.scope===App.statsSel.placeScope) return App._wkSeries.data;
+  const reg=t.games.filter(g=>!g.isPlayoff && !g.isTiebreakerGame);
+  const played=reg.filter(g=>g.homeScore!=null);
+  const lastWeek=played.length? Math.max(...played.map(g=>g.week||0)) : 0;
+  const weeks=[...new Set(reg.map(g=>g.week).filter(w=>w!=null && w<=lastWeek))].sort((a,b)=>a-b);
+  const byTeam={}; t.teams.forEach(tm=>{ byTeam[tm.id]={place:[],points:[],ppg:[],papg:[],pf:[],pa:[],diff:[],dpg:[],pct:[],wins:[]}; });
+  const scope=App.statsSel.placeScope;
+  const groupOf=tm=> scope==='division'?tm.division : scope==='conference'?(tm.conference||'') : '*';
+  weeks.forEach(w=>{
+    const upto=played.filter(g=>g.week<=w);
+    const rows=standingsRows(t.teams, upto, false);
+    const counter={};
+    rows.forEach(r=>{
+      const gk=groupOf(r.team); counter[gk]=(counter[gk]||0)+1;
+      const m=byTeam[r.team.id], gp=r.gp;
+      m.place.push(counter[gk]); m.points.push(r.points); m.pf.push(r.pf); m.pa.push(r.pa); m.diff.push(r.diff);
+      m.wins.push(r.w); m.pct.push(gp?r.pct:null);
+      m.ppg.push(gp? r.pf/gp : null); m.papg.push(gp? r.pa/gp : null); m.dpg.push(gp? r.diff/gp : null);
+    });
+  });
+  const data={weeks, byTeam};
+  App._wkSeries={version:App.dataVersion, scope:App.statsSel.placeScope, data};
+  return data;
+}
+function chartInfo(id, text){ const el=document.getElementById(id); if(el) el.textContent=text; }
+function lineChartSvg(o){
+  const D=chartDims(), W=D.w, H=D.h, F=D.font;
+  const L=o.invertY?44:52, R=14, T=14, B=44;
+  const iw=W-L-R, ih=H-T-B;
+  const vals=o.series.flatMap(s=>s.values.filter(v=>v!=null));
+  if(!vals.length || !o.xLabels.length) return '<div class="empty">Nothing to graph yet \u2014 play some games first.</div>';
+  let min=Math.min(...vals), max=Math.max(...vals);
+  if(o.invertY){ min=1; max=Math.max(max, 2); }
+  else if(o.zeroBase){ min=Math.min(0,min); }
+  const ticks = o.invertY ? (()=>{ const top=Math.ceil(max); const step=Math.max(1,Math.ceil(top/8)); const a=[]; for(let v=1; v<=top; v+=step) a.push(v); if(a[a.length-1]!==top) a.push(top); return a; })() : niceTicks(min,max,5);
+  const y0=ticks[0], y1=ticks[ticks.length-1];
+  const X=i=> L + (o.xLabels.length===1? iw/2 : iw*i/(o.xLabels.length-1));
+  const Y=v=> o.invertY ? T + ih*(v-y0)/Math.max(1e-9,(y1-y0)) : T + ih*(1-(v-y0)/Math.max(1e-9,(y1-y0)));
+  const every=Math.max(1,Math.ceil(o.xLabels.length/ (W>600?20:9)));
+  let g='';
+  ticks.forEach(v=>{ const y=Y(v); g+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" style="stroke:var(--line)" stroke-width="1"/><text x="${L-6}" y="${y+4}" text-anchor="end" font-size="${F}" style="fill:var(--sub)">${o.yFmt?o.yFmt(v):v}</text>`; });
+  o.xLabels.forEach((lab,i)=>{ if(i%every===0 || i===o.xLabels.length-1) g+=`<text x="${X(i)}" y="${H-B+16}" text-anchor="middle" font-size="${F}" style="fill:var(--sub)">${lab}</text>`; });
+  g+=`<text x="${L+iw/2}" y="${H-6}" text-anchor="middle" font-size="${F}" style="fill:var(--sub)">${esc(o.xTitle)}</text>`;
+  g+=`<text transform="translate(12 ${T+ih/2}) rotate(-90)" text-anchor="middle" font-size="${F}" style="fill:var(--sub)">${esc(o.yTitle)}${o.invertY?' (1st at top)':''}</text>`;
+  o.series.forEach(se=>{
+    let d='', pen=false;
+    se.values.forEach((v,i)=>{ if(v==null){ pen=false; return; } d+=(pen?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' '; pen=true; });
+    g+=`<path d="${d}" fill="none" stroke="${se.color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>`;
+    se.values.forEach((v,i)=>{ if(v==null) return;
+      const tip=`${se.name} \u2014 ${o.xTitle} ${o.xLabels[i]}: ${o.valFmt(v)}`;
+      g+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${o.xLabels.length>30?2.4:3.6}" fill="${se.color}" stroke-width="1" style="cursor:pointer;stroke:var(--panel)" onclick="chartInfo('${o.infoId}',this.getAttribute('data-t'))" data-t="${esc(tip)}"><title>${esc(tip)}</title></circle>`;
+    });
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;" role="img">${g}</svg>`;
+}
+function scatterSvg(o){
+  const D=chartDims(), W=D.w, H=D.h+20, F=D.font;
+  const L=54, R=18, T=16, B=48, iw=W-L-R, ih=H-T-B;
+  const pts=o.points.filter(p=>p.x!=null&&p.y!=null&&!isNaN(p.x)&&!isNaN(p.y));
+  if(pts.length<2) return '<div class="empty">Not enough data to plot yet.</div>';
+  const ext=(arr,inv)=>{ let mn=Math.min(...arr), mx=Math.max(...arr); const pad=(mx-mn)*0.08||1; mn-=pad; mx+=pad; const tk=niceTicks(mn,mx,5); return {tk, lo:tk[0], hi:tk[tk.length-1]}; };
+  let xe, ye;
+  if(o.invertX){ const mx=Math.max(...pts.map(p=>p.x)); const step=Math.max(1,Math.ceil(mx/8)); const tk=[]; for(let v=1; v<=mx; v+=step) tk.push(v); xe={tk, lo:Math.max(0.5,1)-0.5, hi:mx+0.5}; } else xe=ext(pts.map(p=>p.x));
+  if(o.invertY){ const mx=Math.max(...pts.map(p=>p.y)); const step=Math.max(1,Math.ceil(mx/8)); const tk=[]; for(let v=1; v<=mx; v+=step) tk.push(v); ye={tk, lo:0.5, hi:mx+0.5}; } else ye=ext(pts.map(p=>p.y));
+  const X=v=> L + iw*( o.invertX ? (xe.hi-v)/(xe.hi-xe.lo) : (v-xe.lo)/(xe.hi-xe.lo) );
+  const Y=v=> T + ih*( o.invertY ? (v-ye.lo)/(ye.hi-ye.lo) : 1-(v-ye.lo)/(ye.hi-ye.lo) );
+  let g='';
+  ye.tk.forEach(v=>{ const y=Y(v); g+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" style="stroke:var(--line)"/><text x="${L-6}" y="${y+4}" text-anchor="end" font-size="${F}" style="fill:var(--sub)">${o.yFmt(v)}</text>`; });
+  xe.tk.forEach(v=>{ const x=X(v); g+=`<line y1="${T}" y2="${H-B}" x1="${x}" x2="${x}" style="stroke:var(--line)" stroke-dasharray="2 4"/><text x="${x}" y="${H-B+16}" text-anchor="middle" font-size="${F}" style="fill:var(--sub)">${o.xFmt(v)}</text>`; });
+  g+=`<text x="${L+iw/2}" y="${H-8}" text-anchor="middle" font-size="${F}" style="fill:var(--sub)">${esc(o.xTitle)}${o.invertX?' (1st at left)':''}</text>`;
+  g+=`<text transform="translate(12 ${T+ih/2}) rotate(-90)" text-anchor="middle" font-size="${F}" style="fill:var(--sub)">${esc(o.yTitle)}${o.invertY?' (1st at top)':''}</text>`;
+  // trend line + correlation
+  const n=pts.length, mx=pts.reduce((a,p)=>a+p.x,0)/n, my=pts.reduce((a,p)=>a+p.y,0)/n;
+  let sxx=0, syy=0, sxy=0; pts.forEach(p=>{ sxx+=(p.x-mx)**2; syy+=(p.y-my)**2; sxy+=(p.x-mx)*(p.y-my); });
+  let r=null;
+  if(sxx>1e-9 && syy>1e-9){
+    const slope=sxy/sxx, ic=my-slope*mx; r=sxy/Math.sqrt(sxx*syy);
+    const xa=Math.min(...pts.map(p=>p.x)), xb=Math.max(...pts.map(p=>p.x));
+    g+=`<line x1="${X(xa)}" y1="${Y(slope*xa+ic)}" x2="${X(xb)}" y2="${Y(slope*xb+ic)}" style="stroke:var(--sub)" stroke-width="1.6" stroke-dasharray="6 5" opacity=".8"/>`;
+  }
+  pts.forEach(p=>{
+    const tip=`${p.name}: ${o.xTitle} ${o.xFmt(p.x)} \u00b7 ${o.yTitle} ${o.yFmt(p.y)}`;
+    g+=`<g style="cursor:pointer" onclick="chartInfo('${o.infoId}',this.getAttribute('data-t'));" ondblclick="openTeamModal('${p.id}')" data-t="${esc(tip)}"><circle cx="${X(p.x).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="6.5" fill="${p.color}" style="stroke:var(--panel)" stroke-width="1.5"><title>${esc(tip)}</title></circle>`
+       + (pts.length<=24 ? `<text x="${(X(p.x)+9).toFixed(1)}" y="${(Y(p.y)+4).toFixed(1)}" font-size="${F-1}" style="fill:var(--text)" opacity=".85">${esc(p.name.length>12?p.name.slice(0,11)+'\u2026':p.name)}</text>`:'')
+       + `</g>`;
+  });
+  return {svg:`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;" role="img">${g}</svg>`, r};
+}
+function renderTimeGraph(){
+  const t=App.current, S=App.statsSel;
+  const ser=weeklySeries();
+  const ids=graphTeamIds();
+  const metric=S.gMetric;
+  const scopeSel = (t.settings.useConferences||t.settings.divisionNames.length>1) ? `<label>Place compared within</label><select onchange="App.statsSel.placeScope=this.value;App._wkSeries=null;renderTab();">
+      <option value="league" ${S.placeScope==='league'?'selected':''}>Whole league</option>
+      <option value="division" ${S.placeScope==='division'?'selected':''}>Own division / tier</option>
+      ${t.settings.useConferences?`<option value="conference" ${S.placeScope==='conference'?'selected':''}>Own conference</option>`:''}</select>` : '';
+  const chips=t.teams.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(tm=>{
+    const on=ids.includes(tm.id), idx=ids.indexOf(tm.id), col=graphColor(tm.id, idx>=0?idx:0);
+    return `<button class="btn small" style="${on?`border-color:${col};background:${hexRgba(col,0.2)||'transparent'};`:'opacity:.6;'}" onclick="toggleGraphTeam('${tm.id}')"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${on?col:'var(--line)'};margin-right:5px;"></span>${esc(tm.name)}</button>`;
+  }).join('');
+  let chart;
+  if(!ser.weeks.length) chart='<div class="empty">Nothing to graph yet \u2014 play some games first.</div>';
+  else if(!ids.length) chart='<div class="empty">Pick at least one team above.</div>';
+  else {
+    const series=ids.map((id,i)=>({name:teamName(id), color:graphColor(id,i), values:ser.byTeam[id]?ser.byTeam[id][metric]:[]}));
+    chart=lineChartSvg({xLabels:ser.weeks.map(String), xTitle:'Week', yTitle:TIME_METRICS[metric], series, invertY:metric==='place', zeroBase:['pf','pa','wins','points'].includes(metric), valFmt:v=>fmtVal(metric,v), yFmt:v=>fmtVal(metric,v), infoId:'gInfoTime'});
+  }
+  return `<div class="card">
+    <h4>\ud83d\udcc8 How the season unfolded</h4>
+    <div class="muted" style="font-size:11.5px;margin-bottom:8px;">Every week is on the bottom axis. Each line is a team, measured after that week's games (regular season, tiebreaker games excluded).</div>
+    <div class="row" style="align-items:flex-end;gap:12px;">
+      <div class="col" style="min-width:200px;"><label>Show on the vertical axis</label>
+        <select onchange="App.statsSel.gMetric=this.value;renderTab();">${Object.entries(TIME_METRICS).map(([k,l])=>`<option value="${k}" ${metric===k?'selected':''}>${l}</option>`).join('')}</select></div>
+      ${metric==='place'?`<div class="col" style="min-width:180px;">${scopeSel}</div>`:''}
     </div>
-    ${App.statsView==='playoffs' ? renderPlayoffStandingsTable() : `
-    <div class="card">
-      <div class="row">
-        <select multiple id="statTeams" style="min-height:90px;min-width:180px;">${t.teams.map(tm=>`<option value="${tm.id}" ${App.statsSel.teams.includes(tm.id)?'selected':''}>${esc(tm.name)}</option>`).join('')}</select>
-        <div class="col">
-          <label>Metric</label>
-          <select onchange="App.statsSel.metric=this.value;renderTab();">${Object.entries(metrics).map(([k,l])=>`<option value="${k}" ${App.statsSel.metric===k?'selected':''}>${l}</option>`).join('')}</select>
-          <label>Scenario</label>
-          <select onchange="App.statsSel.scope=this.value;renderTab();">
-            <option value="regular" ${App.statsSel.scope==='regular'?'selected':''}>Regular season</option>
-            <option value="playoffs" ${App.statsSel.scope==='playoffs'?'selected':''}>Playoffs only</option>
-            <option value="all" ${App.statsSel.scope==='all'?'selected':''}>All games</option>
-            <option value="home" ${App.statsSel.scope==='home'?'selected':''}>Home games only</option>
-            <option value="away" ${App.statsSel.scope==='away'?'selected':''}>Away games only</option>
-          </select>
-          <div class="row">
-            <button class="btn small ${App.statsSel.mode==='chart'?'primary':''}" onclick="App.statsSel.mode='chart';renderTab();">Chart</button>
-            <button class="btn small ${App.statsSel.mode==='list'?'primary':''}" onclick="App.statsSel.mode='list';renderTab();">List</button>
-            <button class="btn small" onclick="applyStatTeams()">Apply team selection</button>
-          </div>
-        </div>
-      </div>
-    </div>
-    ${renderStatsBody(metrics)}
-    `}
+    <div class="row" style="margin:10px 0 6px;"><span class="muted" style="font-size:11.5px;align-self:center;">Teams:</span>
+      <button class="btn small" onclick="setGraphTeams('top')">Top 5</button><button class="btn small" onclick="setGraphTeams('bottom')">Bottom 5</button><button class="btn small" onclick="setGraphTeams('all')">All</button><button class="btn small" onclick="setGraphTeams('none')">None</button></div>
+    <div class="row" style="gap:6px;margin-bottom:10px;">${chips}</div>
+    ${chart}
+    <div id="gInfoTime" class="muted" style="font-size:12px;min-height:18px;margin-top:6px;">Tap a point to see its exact value.</div>
   </div>`;
 }
+function scatterValue(teamId, metric, rows){
+  const t=App.current;
+  const games=statGamesFor(teamId).filter(g=>g.homeScore!=null && !g.isTiebreakerGame);
+  const rec=computeRecord(teamId, games), gp=games.length;
+  switch(metric){
+    case 'place': { const i=rows.findIndex(r=>r.team.id===teamId); return i>=0? i+1 : null; }
+    case 'points': return rec.points;
+    case 'ppg': return gp? rec.pf/gp : null;
+    case 'papg': return gp? rec.pa/gp : null;
+    case 'pf': return rec.pf; case 'pa': return rec.pa; case 'diff': return rec.diff;
+    case 'dpg': return gp? rec.diff/gp : null;
+    case 'pct': return gp? rec.pct : null;
+    case 'wins': return rec.w; case 'losses': return rec.l;
+    case 'skill': { const tm=teamById(teamId); return tm? (tm.skillLevel||500) : null; }
+    case 'sos': { const m=regPctMap(); const opp=games.map(g=>g.home===teamId?g.away:g.home); return opp.length? opp.reduce((a,id)=>a+(m[id]||0),0)/opp.length : null; }
+  }
+  return null;
+}
+function renderScatter(){
+  const t=App.current, S=App.statsSel;
+  const rows=cachedLeagueRows();
+  const pts=t.teams.map((tm,i)=>({id:tm.id, name:tm.name, color:graphColor(tm.id,i), x:scatterValue(tm.id,S.xMetric,rows), y:scatterValue(tm.id,S.yMetric,rows)}));
+  const res=scatterSvg({points:pts, xTitle:SCATTER_METRICS[S.xMetric], yTitle:SCATTER_METRICS[S.yMetric], invertX:S.xMetric==='place', invertY:S.yMetric==='place', xFmt:v=>fmtVal(S.xMetric,v), yFmt:v=>fmtVal(S.yMetric,v), infoId:'gInfoScatter'});
+  const sel=(key)=>`<select onchange="App.statsSel.${key}=this.value;renderTab();">${Object.entries(SCATTER_METRICS).map(([k,l])=>`<option value="${k}" ${S[key]===k?'selected':''}>${l}</option>`).join('')}</select>`;
+  let note='';
+  if(res && res.r!=null){
+    const r=res.r, a=Math.abs(r), word=a>=0.8?'very strong':a>=0.6?'strong':a>=0.4?'moderate':a>=0.2?'weak':'little to no';
+    const dir = (S.xMetric==='place')!==(S.yMetric==='place') ? -r : r;   // place is "lower is better", so flip so +/- reads naturally
+    note=`<div class="muted" style="font-size:12px;margin-top:6px;">The dashed line is the trend. Relationship: <strong>${word}</strong> ${a<0.2?'':(dir>0?'(higher goes with higher)':'(higher goes with lower)')} \u00b7 r = ${dir.toFixed(2)}.</div>`;
+  }
+  return `<div class="card">
+    <h4>\ud83d\udd0d Compare any two stats</h4>
+    <div class="muted" style="font-size:11.5px;margin-bottom:8px;">Every team is one dot. Pick what sits on each axis \u2014 for example points per game across and place in the standings up the side.</div>
+    <div class="row" style="align-items:flex-end;gap:12px;">
+      <div class="col" style="min-width:170px;"><label>Horizontal (X)</label>${sel('xMetric')}</div>
+      <div class="col" style="min-width:170px;"><label>Vertical (Y)</label>${sel('yMetric')}</div>
+      <button class="btn small" onclick="const S=App.statsSel;[S.xMetric,S.yMetric]=[S.yMetric,S.xMetric];renderTab();">\u21c4 Swap</button>
+      <div class="col" style="min-width:150px;"><label>Games counted</label>
+        <select onchange="App.statsSel.scope=this.value;renderTab();">
+          <option value="regular" ${S.scope==='regular'?'selected':''}>Regular season</option>
+          <option value="playoffs" ${S.scope==='playoffs'?'selected':''}>Playoffs only</option>
+          <option value="all" ${S.scope==='all'?'selected':''}>All games</option>
+          <option value="home" ${S.scope==='home'?'selected':''}>Home games only</option>
+          <option value="away" ${S.scope==='away'?'selected':''}>Away games only</option>
+        </select></div>
+    </div>
+    <div style="margin-top:10px;">${res && res.svg ? res.svg : (res||'')}</div>
+    <div id="gInfoScatter" class="muted" style="font-size:12px;min-height:18px;margin-top:6px;">Tap a dot to see its values. Double-tap a dot to open the team.</div>
+    ${note}
+  </div>`;
+}
+
+/* ---------- records & lists ---------- */
+function recordsGamePool(){
+  const t=App.current, sc=App.statsSel.recScope;
+  return t.games.filter(g=>g.homeScore!=null && g.awayScore!=null && !g.isTiebreakerGame
+    && (sc==='regular' ? isRegularSeasonGame(g) : sc==='playoffs' ? g.isPlayoff : true))
+    .sort((a,b)=> (a.isPlayoff?1:0)-(b.isPlayoff?1:0) || (a.week||a.gameNum||0)-(b.week||b.gameNum||0));
+}
+function gameLabel(g){ return g.isPlayoff ? `Playoffs${g.gameNum?' G'+g.gameNum:''}` : (g.week!=null?'Wk '+g.week:''); }
+function listCard(title, rows, emptyText, hint){
+  return `<div class="card" style="overflow-x:auto;"><h4>${title}</h4>${hint?`<div class="muted" style="font-size:11px;margin-bottom:4px;">${hint}</div>`:''}
+    ${rows.length? `<table><tbody>${rows.map((r,i)=>`<tr style="${r.click?'cursor:pointer;':''}" ${r.click?`onclick="${r.click}"`:''}><td style="width:22px;color:var(--sub);">${i+1}</td><td class="team-cell" style="white-space:normal;">${r.left}</td><td style="text-align:right;white-space:nowrap;font-weight:600;">${r.right}</td></tr>`).join('')}</tbody></table>` : `<div class="muted">${emptyText||'Nothing yet.'}</div>`}</div>`;
+}
+function renderRecordsLists(){
+  const t=App.current, S=App.statsSel, pool=recordsGamePool();
+  if(!pool.length) return '<div class="empty">Play some games and the records will fill in here.</div>';
+  const N=5, nm=id=>esc(teamName(id)), badge=id=>teamBadgeHtml(id);
+  const gm=(g)=>{ const aw=g.awayScore>g.homeScore; return {w:aw?g.away:g.home, l:aw?g.home:g.away, ws:aw?g.awayScore:g.homeScore, ls:aw?g.homeScore:g.awayScore, margin:Math.abs(g.homeScore-g.awayScore), total:g.homeScore+g.awayScore, tie:g.homeScore===g.awayScore}; };
+  const open=g=>`openGameModal('${g.id}')`;
+  // streaks + running pct (for upsets)
+  const results={}; t.teams.forEach(tm=>results[tm.id]=[]);
+  const pct={}, upsets=[]; t.teams.forEach(tm=>pct[tm.id]={w:0,n:0});
+  pool.forEach(g=>{
+    const x=gm(g);
+    const pre=id=>pct[id].n? pct[id].w/pct[id].n : null;
+    if(!x.tie && pct[x.w].n>=3 && pct[x.l].n>=3){
+      const pw=pre(x.w), pl=pre(x.l);
+      if(pl>pw) upsets.push({g, x, pw, pl, score:pl-pw, ww:pct[x.w].w+'-'+(pct[x.w].n-pct[x.w].w), lw:pct[x.l].w+'-'+(pct[x.l].n-pct[x.l].w)});
+    }
+    [[g.home,g.homeScore,g.awayScore],[g.away,g.awayScore,g.homeScore]].forEach(([id,my,op])=>{
+      if(!results[id]) return;
+      const r = my>op?'W':my<op?'L':'T'; results[id].push({r, wk:gameLabel(g)});
+      pct[id].n++; pct[id].w += r==='W'?1: r==='T'?0.5:0;
+    });
+  });
+  const streakOf=(arr,kind)=>{ let best=0,cur=0,start=0,bs=0,be=0; arr.forEach((x,i)=>{ if(x.r===kind){ if(cur===0) start=i; cur++; if(cur>best){ best=cur; bs=start; be=i; } } else cur=0; });
+    let act=0; for(let i=arr.length-1;i>=0 && arr[i].r===kind;i--) act++;
+    return {best, from:arr[bs]?arr[bs].wk:'', to:arr[be]?arr[be].wk:'', active:act}; };
+  const teamRows=t.teams.map(tm=>({tm, w:streakOf(results[tm.id],'W'), l:streakOf(results[tm.id],'L'), n:results[tm.id].length}));
+  const tmClick=id=>`openTeamModal('${id}')`;
+  const winStreaks=teamRows.filter(r=>r.w.best>0).sort((a,b)=>b.w.best-a.w.best).slice(0,N).map(r=>({left:`${badge(r.tm.id)}${nm(r.tm.id)} <span class="muted" style="font-size:11px;">${r.w.from}${r.w.from!==r.w.to?' \u2192 '+r.w.to:''}${r.w.active===r.w.best?' \u00b7 active':''}</span>`, right:r.w.best+' W', click:tmClick(r.tm.id)}));
+  const loseStreaks=teamRows.filter(r=>r.l.best>0).sort((a,b)=>b.l.best-a.l.best).slice(0,N).map(r=>({left:`${badge(r.tm.id)}${nm(r.tm.id)} <span class="muted" style="font-size:11px;">${r.l.from}${r.l.from!==r.l.to?' \u2192 '+r.l.to:''}${r.l.active===r.l.best?' \u00b7 active':''}</span>`, right:r.l.best+' L', click:tmClick(r.tm.id)}));
+  const hot=teamRows.filter(r=>r.n>=3).map(r=>{ const last=results[r.tm.id].slice(-5); return {tm:r.tm, w:last.filter(x=>x.r==='W').length, n:last.length, seq:last.map(x=>x.r).join('')}; }).sort((a,b)=>b.w/b.n-a.w/a.n || b.w-a.w).slice(0,N).map(r=>({left:`${badge(r.tm.id)}${nm(r.tm.id)} <span class="muted" style="font-size:11px;">${r.seq}</span>`, right:`${r.w}-${r.n-r.w}`, click:tmClick(r.tm.id)}));
+  const gl=(g)=>{ const x=gm(g); return `${badge(x.w)}<strong>${nm(x.w)}</strong> ${x.ws}\u2013${x.ls} ${badge(x.l)}${nm(x.l)}${g.ot?' (OT)':''}${g.pk?' (PK)':''} <span class="muted" style="font-size:11px;">${gameLabel(g)}</span>`; };
+  const decided=pool.filter(g=>g.homeScore!==g.awayScore);
+  const blowouts=decided.slice().sort((a,b)=>gm(b).margin-gm(a).margin).slice(0,N).map(g=>({left:gl(g), right:'+'+gm(g).margin, click:open(g)}));
+  const closest=decided.slice().sort((a,b)=>gm(a).margin-gm(b).margin || gm(b).total-gm(a).total).slice(0,N).map(g=>({left:gl(g), right:'+'+gm(g).margin, click:open(g)}));
+  const shootouts=pool.slice().sort((a,b)=>gm(b).total-gm(a).total).slice(0,N).map(g=>({left:gl(g), right:gm(g).total+' pts', click:open(g)}));
+  const lowest=pool.slice().sort((a,b)=>gm(a).total-gm(b).total).slice(0,N).map(g=>({left:gl(g), right:gm(g).total+' pts', click:open(g)}));
+  const upsetRows=upsets.sort((a,b)=>b.score-a.score).slice(0,N).map(u=>({left:`${badge(u.x.w)}<strong>${nm(u.x.w)}</strong> (${u.ww}) beat ${badge(u.x.l)}${nm(u.x.l)} (${u.lw}) <span class="muted" style="font-size:11px;">${u.x.ws}\u2013${u.x.ls} \u00b7 ${gameLabel(u.g)}</span>`, right:'+'+Math.round(u.score*100)+'% gap', click:open(u.g)}));
+  const perf=[]; pool.forEach(g=>{ perf.push({id:g.home, pf:g.homeScore, pa:g.awayScore, g}); perf.push({id:g.away, pf:g.awayScore, pa:g.homeScore, g}); });
+  const bestOff=perf.slice().sort((a,b)=>b.pf-a.pf).slice(0,N).map(p=>({left:`${badge(p.id)}${nm(p.id)} <span class="muted" style="font-size:11px;">vs ${nm(p.id===p.g.home?p.g.away:p.g.home)} \u00b7 ${gameLabel(p.g)}</span>`, right:p.pf, click:open(p.g)}));
+  const bestDef=perf.slice().sort((a,b)=>a.pa-b.pa || b.pf-a.pf).slice(0,N).map(p=>({left:`${badge(p.id)}${nm(p.id)} <span class="muted" style="font-size:11px;">vs ${nm(p.id===p.g.home?p.g.away:p.g.home)} \u00b7 ${gameLabel(p.g)}</span>`, right:p.pa+' allowed', click:open(p.g)}));
+  // season-long team rankings
+  const agg=t.teams.map(tm=>{ const gs=pool.filter(g=>g.home===tm.id||g.away===tm.id); const rec=computeRecord(tm.id, gs);
+    const home=computeRecord(tm.id, gs.filter(g=>g.home===tm.id)), away=computeRecord(tm.id, gs.filter(g=>g.away===tm.id));
+    let ot=0, clean=0, close=0, closeW=0; gs.forEach(g=>{ const my=g.home===tm.id?g.homeScore:g.awayScore, op=g.home===tm.id?g.awayScore:g.homeScore; if(g.ot||g.pk) ot++; if(op===0) clean++; if(Math.abs(my-op)<=1 && my!==op){ close++; if(my>op) closeW++; } });
+    return {tm, rec, home, away, gp:gs.length, ot, clean, close, closeW}; }).filter(a=>a.gp>0);
+  const recStr=r=>`${r.w}-${r.l}${r.t?'-'+r.t:''}`;
+  const topOff=agg.slice().sort((a,b)=>b.rec.pf/b.gp-a.rec.pf/a.gp).slice(0,N).map(a=>({left:`${badge(a.tm.id)}${nm(a.tm.id)}`, right:(a.rec.pf/a.gp).toFixed(1)+' / g', click:tmClick(a.tm.id)}));
+  const topDef=agg.slice().sort((a,b)=>a.rec.pa/a.gp-b.rec.pa/b.gp).slice(0,N).map(a=>({left:`${badge(a.tm.id)}${nm(a.tm.id)}`, right:(a.rec.pa/a.gp).toFixed(1)+' / g', click:tmClick(a.tm.id)}));
+  const bestHome=agg.filter(a=>a.home.gp>0).sort((a,b)=>b.home.pct-a.home.pct || b.home.w-a.home.w).slice(0,N).map(a=>({left:`${badge(a.tm.id)}${nm(a.tm.id)}`, right:recStr(a.home), click:tmClick(a.tm.id)}));
+  const bestAway=agg.filter(a=>a.away.gp>0).sort((a,b)=>b.away.pct-a.away.pct || b.away.w-a.away.w).slice(0,N).map(a=>({left:`${badge(a.tm.id)}${nm(a.tm.id)}`, right:recStr(a.away), click:tmClick(a.tm.id)}));
+  const clutch=agg.filter(a=>a.close>=2).sort((a,b)=>b.closeW/b.close-a.closeW/a.close || b.close-a.close).slice(0,N).map(a=>({left:`${badge(a.tm.id)}${nm(a.tm.id)}`, right:`${a.closeW}-${a.close-a.closeW}`, click:tmClick(a.tm.id)}));
+  const shutouts=agg.filter(a=>a.clean>0).sort((a,b)=>b.clean-a.clean).slice(0,N).map(a=>({left:`${badge(a.tm.id)}${nm(a.tm.id)}`, right:a.clean, click:tmClick(a.tm.id)}));
+  const otKings=agg.filter(a=>a.ot>0).sort((a,b)=>b.ot-a.ot).slice(0,N).map(a=>({left:`${badge(a.tm.id)}${nm(a.tm.id)}`, right:a.ot+' games', click:tmClick(a.tm.id)}));
+  // luck: actual win% vs. Pythagorean expectation
+  const totPts=agg.reduce((s,a)=>s+a.rec.pf,0), totG=agg.reduce((s,a)=>s+a.gp,0);
+  const exp=Math.max(1, Math.pow(totG? (2*totPts/totG) : 1, 0.287));
+  const luck=agg.filter(a=>a.gp>=3 && (a.rec.pf+a.rec.pa)>0).map(a=>{ const e=Math.pow(a.rec.pf,exp)/(Math.pow(a.rec.pf,exp)+Math.pow(a.rec.pa,exp)); return {a, e, diff:a.rec.pct-e}; });
+  const lucky=luck.slice().sort((x,y)=>y.diff-x.diff).filter(x=>x.diff>0.001).slice(0,N).map(x=>({left:`${badge(x.a.tm.id)}${nm(x.a.tm.id)} <span class="muted" style="font-size:11px;">${recStr(x.a.rec)}, expected ${(x.e*100).toFixed(0)}%</span>`, right:'+'+(x.diff*100).toFixed(0)+'%', click:tmClick(x.a.tm.id)}));
+  const unlucky=luck.slice().sort((x,y)=>x.diff-y.diff).filter(x=>x.diff<-0.001).slice(0,N).map(x=>({left:`${badge(x.a.tm.id)}${nm(x.a.tm.id)} <span class="muted" style="font-size:11px;">${recStr(x.a.rec)}, expected ${(x.e*100).toFixed(0)}%</span>`, right:(x.diff*100).toFixed(0)+'%', click:tmClick(x.a.tm.id)}));
+  // biggest weekly moves in the standings
+  let climbs=[], falls=[];
+  if(S.recScope!=='playoffs'){
+    const ser=weeklySeries();
+    const moves=[]; t.teams.forEach(tm=>{ const p=ser.byTeam[tm.id]?ser.byTeam[tm.id].place:[]; for(let i=1;i<p.length;i++) moves.push({tm, delta:p[i-1]-p[i], from:p[i-1], to:p[i], wk:ser.weeks[i]}); });
+    const fmt=m=>({left:`${badge(m.tm.id)}${nm(m.tm.id)} <span class="muted" style="font-size:11px;">${ordinal(m.from)} \u2192 ${ordinal(m.to)} \u00b7 Wk ${m.wk}</span>`, right:(m.delta>0?'\u25b2 ':'\u25bc ')+Math.abs(m.delta), click:tmClick(m.tm.id)});
+    climbs=moves.filter(m=>m.delta>0).sort((a,b)=>b.delta-a.delta).slice(0,N).map(fmt);
+    falls=moves.filter(m=>m.delta<0).sort((a,b)=>a.delta-b.delta).slice(0,N).map(fmt);
+  }
+  const grid=cards=>`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(${currentDevice()==='iphone'?260:320}px,1fr));gap:10px;">${cards.join('')}</div>`;
+  return `
+    <div class="row" style="align-items:center;"><label style="margin:0;">Records from</label>
+      <select onchange="App.statsSel.recScope=this.value;renderTab();"><option value="regular" ${S.recScope==='regular'?'selected':''}>Regular season</option><option value="playoffs" ${S.recScope==='playoffs'?'selected':''}>Playoffs only</option><option value="all" ${S.recScope==='all'?'selected':''}>All games</option></select>
+      <span class="muted" style="font-size:11.5px;">Tap a row to open that game or team.</span></div>
+    <h4 style="margin:6px 0 0;">Streaks &amp; form</h4>
+    ${grid([listCard('\ud83d\udd25 Longest win streaks',winStreaks,'No wins yet.'), listCard('\ud83e\uddca Longest losing streaks',loseStreaks,'No losses yet.'), listCard('\ud83d\udcc8 Hottest right now (last 5)',hot,'Need a few games first.')])}
+    <h4 style="margin:6px 0 0;">Best games</h4>
+    ${grid([listCard('\ud83d\udca5 Largest margins of victory',blowouts,'No decided games.'), listCard('\ud83d\ude2c Closest finishes',closest,'No decided games.'), listCard('\ud83c\udfaf Biggest upsets',upsetRows,'No upsets yet (needs 3+ games for both teams).','Measured by the gap in the two teams\' win % going into the game.'), listCard('\ud83c\udf86 Highest-scoring games',shootouts), listCard('\ud83e\uddf1 Lowest-scoring games',lowest), listCard('\ud83d\ude80 Best single-game offense',bestOff), listCard('\ud83d\udee1\ufe0f Best single-game defense',bestDef)])}
+    <h4 style="margin:6px 0 0;">Teams</h4>
+    ${grid([listCard('\u2694\ufe0f Best offense (per game)',topOff), listCard('\ud83e\uddf1 Best defense (per game)',topDef), listCard('\ud83c\udfe0 Best home records',bestHome), listCard('\u2708\ufe0f Best road records',bestAway), listCard('\ud83e\udde0 Clutch (decided by 1 point/goal)',clutch,'No one-score games yet.'), listCard('\u23f1\ufe0f Most overtime/shootout games',otKings,'No overtime games.'), listCard('\ud83e\udde4 Most clean sheets',shutouts,'No shutouts yet.'), listCard('\ud83c\udf40 Luckiest (record beats the scoring)',lucky,'Nothing stands out yet.','Actual win % vs. what points for/against would predict.'), listCard('\ud83d\ude2d Unluckiest',unlucky,'Nothing stands out yet.')])}
+    ${climbs.length?`<h4 style="margin:6px 0 0;">Movers</h4>${grid([listCard('\ud83d\ude80 Biggest one-week climbs',climbs), listCard('\ud83d\udcc9 Biggest one-week drops',falls)])}`:''}
+  `;
+}
+function renderStatsTable(){
+  const t=App.current, S=App.statsSel;
+  const teams = S.teams.length? S.teams.map(id=>t.teams.find(x=>x.id===id)).filter(Boolean) : t.teams;
+  const data = teams.map(tm=>({id:tm.id, name:tm.name, val:statValue(tm.id, S.listMetric)}));
+  data.sort((a,b)=>S.listMetric==='pa'||S.listMetric==='papg'||S.listMetric==='losses' ? a.val-b.val : b.val-a.val);
+  return `<div class="card">
+    <h4>\ud83d\udccb Team stat table</h4>
+    <div class="row" style="align-items:flex-start;">
+      <select multiple id="statTeams" style="min-height:90px;min-width:180px;">${t.teams.map(tm=>`<option value="${tm.id}" ${S.teams.includes(tm.id)?'selected':''}>${esc(tm.name)}</option>`).join('')}</select>
+      <div class="col">
+        <label>Stat</label>
+        <select onchange="App.statsSel.listMetric=this.value;renderTab();">${Object.entries(LIST_METRICS).map(([k,l])=>`<option value="${k}" ${S.listMetric===k?'selected':''}>${l}</option>`).join('')}</select>
+        <label>Games counted</label>
+        <select onchange="App.statsSel.scope=this.value;renderTab();">
+          <option value="regular" ${S.scope==='regular'?'selected':''}>Regular season</option><option value="playoffs" ${S.scope==='playoffs'?'selected':''}>Playoffs only</option><option value="all" ${S.scope==='all'?'selected':''}>All games</option><option value="home" ${S.scope==='home'?'selected':''}>Home games only</option><option value="away" ${S.scope==='away'?'selected':''}>Away games only</option>
+        </select>
+        <button class="btn small" style="margin-top:6px;" onclick="applyStatTeams()">Apply team selection</button>
+        <div class="muted" style="font-size:11px;">Select none to show every team.</div>
+      </div>
+    </div>
+    <table style="margin-top:8px;"><thead><tr><th class="team-cell" style="cursor:default;">Team</th><th style="cursor:default;">${LIST_METRICS[S.listMetric]}</th></tr></thead>
+    <tbody>${data.map(d=>`<tr><td class="team-cell" style="cursor:pointer;" onclick="openTeamModal('${d.id}')">${teamBadgeHtml(d.id)}${esc(d.name)}</td><td>${d.val}</td></tr>`).join('')}</tbody></table>
+  </div>`;
+}
+function renderStats(){
+  const t=App.current;
+  statsDefaults();
+  const v = App.statsView;
+  const view = (v==='playoffs'||v==='lists') ? v : 'graphs';
+  const tabBtn=(id,label)=>`<button class="btn ${view===id?'primary':''}" onclick="App.statsView='${id}';renderTab();">${label}</button>`;
+  let body;
+  if(!t.teams.length) body='<div class="empty">Add teams to see stats.</div>';
+  else if(view==='playoffs') body=renderPlayoffStandingsTable();
+  else if(view==='lists') body=renderRecordsLists()+renderStatsTable();
+  else body=renderTimeGraph()+renderScatter();
+  return `<div class="col">
+    <div class="row">${tabBtn('graphs','\ud83d\udcc8 Graphs')}${tabBtn('lists','\ud83d\udccb Lists &amp; Records')}${tabBtn('playoffs','\ud83c\udfc6 Playoff Standings')}</div>
+    ${body}
+  </div>`;
+}
+
 function renderPlayoffStandingsTable(){
   const t=App.current;
   if(!t.playoffBracket || !t.playoffBracket.series.length) return '<div class="empty">No playoff bracket yet \u2014 seed one from the Playoffs tab.</div>';
@@ -6614,31 +7350,18 @@ function statGamesFor(teamId){
   return games;
 }
 function statValue(teamId, metric){
-  const games = statGamesFor(teamId).filter(g=>g.homeScore!=null);
+  const games = statGamesFor(teamId).filter(g=>g.homeScore!=null && !g.isTiebreakerGame);
   const rec = computeRecord(teamId, games);
   if(metric==='pf') return rec.pf;
   if(metric==='pa') return rec.pa;
   if(metric==='diff') return rec.diff;
   if(metric==='pct') return +(rec.pct*100).toFixed(1);
   if(metric==='points') return rec.points;
+  if(metric==='wins') return rec.w;
+  if(metric==='losses') return rec.l;
   if(metric==='ppg') return games.length? +(rec.pf/games.length).toFixed(1) : 0;
+  if(metric==='papg') return games.length? +(rec.pa/games.length).toFixed(1) : 0;
   return 0;
-}
-function renderStatsBody(metrics){
-  const t=App.current;
-  const teams = App.statsSel.teams.length? App.statsSel.teams.map(id=>t.teams.find(x=>x.id===id)).filter(Boolean) : t.teams;
-  if(!teams.length) return `<div class="empty">Add teams to see stats.</div>`;
-  const data = teams.map(tm=>({name:tm.name, val:statValue(tm.id, App.statsSel.metric)}));
-  if(App.statsSel.mode==='list'){
-    return `<div class="card"><table><thead><tr><th class="team-cell">Team</th><th>${metrics[App.statsSel.metric]}</th></tr></thead>
-    <tbody>${data.sort((a,b)=>b.val-a.val).map(d=>`<tr><td class="team-cell">${esc(d.name)}</td><td>${d.val}</td></tr>`).join('')}</tbody></table></div>`;
-  }
-  const max = Math.max(1,...data.map(d=>Math.abs(d.val)));
-  return `<div class="card">
-    <div class="barchart">
-      ${data.map(d=>`<div class="bar" style="height:${Math.max(4,Math.abs(d.val)/max*180)}px;"><span>${d.val}</span><label>${esc(d.name.length>10?d.name.slice(0,9)+'\u2026':d.name)}</label></div>`).join('')}
-    </div>
-  </div>`;
 }
 
 /* ================================ BOOTSTRAP ================================ */
@@ -6838,7 +7561,7 @@ function openPerfModal(){
 /* Copy only the unplayed games (they get simulated); already-played games are shared, never mutated. */
 function simClone(games){
   const out=[];
-  for(const g of games){ if(g.isPlayoff) continue; out.push(g.homeScore==null ? {...g} : g); }
+  for(const g of games){ if(g.isPlayoff) continue; if(g.isTiebreakerGame){ if(g.homeScore!=null) out.push(g); continue; } out.push(g.homeScore==null ? {...g} : g); }
   return out;
 }
 function cachedHtml(key, fn){
